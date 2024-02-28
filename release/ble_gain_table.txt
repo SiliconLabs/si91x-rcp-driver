@@ -1,0 +1,98 @@
+//!************************************************************
+//! INSTRUCTIONS SHOULD BE FOLLOWED TO EDIT BELOW GAIN TABLES:
+//!************************************************************
+//! 1. Each value should be seperated by ',' and space characters.
+//! 2. Multi-line comments not supported. (Eg. /* comment */)
+//! 3. A space before comment is needed, for in-line comments. (Eg. <Data> //<Comment>)
+//! 4. Hexa-decimal numbers not supported.
+//! 5. No space between value and ',' character.
+//! 6. Max power gain table with size more than 10 bytes is not supported.
+//! 6. Offset gain table with size more than 128 bytes is not supported.
+//! 7. Supported table names and their maximum supported size are
+//!     For BLE Max Power Table        --- _RS9116_BLE_REGION_BASED_MAXPOWER_XX           MAX_LENGTH =  10
+//!     For BLE Offset Table           --- _RS9116_BLE_REGION_BASED_MAXPOWER_VS_OFFSET_XX MAX_LENGTH =  128
+//!    NOTE: No support for other table names.
+//! 8. Update above mentioned respected generic tables with the required data
+//! 9. Max Power Gain table Format:
+//!    <TABLE NAME>[] = { //<COMMENTS if any>
+//!    <REGION NAME 1>, <MAX POWER>,
+//!    <REGION NAME 2>, <MAX POWER>,
+//!    .
+//!    .
+//!    <REGION NAME N>, <MAX POWER>,
+//!    }; //<COMMENTS if any>
+//!    
+//! 10. Offset Gain table Format:
+//!    <TABLE NAME>[] = { //<COMMENTS if any>
+//!    <NO.of Regions>,
+//!        <REGION NAME 1>, <NO.OF CHANNELS IN THIS REGION>,
+//!            <CHANNEL NUMBER 1>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!            <CHANNEL NUMBER 2>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!            .
+//!            .
+//!            <CHANNEL NUMBER m-1>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!            <CHANNEL NUMBER m>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!        <REGION NAME 2>, <NO.OF CHANNELS IN THIS REGION>,
+//!            <CHANNEL NUMBER 1>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!            <CHANNEL NUMBER 2>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!            .
+//!            .
+//!            <CHANNEL NUMBER m-1>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!            <CHANNEL NUMBER m>, <TX POWER OFFSET FOR PHY RATE = 1M>,  <TX POWER OFFSET FOR PHY RATE = 2M>, <TX POWER OFFSET FOR PHY RATE = 125kbps>, <TX POWER OFFSET FOR PHY RATE = 500kbps>,
+//!        <REGION NAME 3>, <NO.OF CHANNELS IN THIS REGION>,
+//!        .
+//!        .
+//!        <REGION NAME y>, <NO.OF CHANNELS IN THIS REGION>,
+//!    }; //<COMMENTS if any>
+//! 11. Supported Region names:
+//!     FCC, ETSI, TELEC, WORLDWIDE, KCC
+//!
+
+//!  For Example: 
+_RS9116_BLE_REGION_BASED_MAXPOWER_XX[] = {
+	// REGION_NAME  MAX_POWER
+	FCC,        16,
+	ETSI,       8,
+	TELEC,      10,
+	WORLDWIDE,  16,
+	KCC,        10,
+};
+
+_RS9116_BLE_REGION_BASED_MAXPOWER_VS_OFFSET_XX[] = {
+	5, //NUM_OF_REGIONS
+	FCC,
+	4, //NUM_OF_CHANNELS
+	//ch_num  1M	2M   125kbps 500kbps
+	255,	  0,	0,      6,   0,
+	0,        0,	0,      6,   0,
+	38,       0,	2,      6,   0,
+	39,       0,	16,     6,   0,
+	ETSI,
+	4, //NUM_OF_CHANNELS
+	//ch_num  1M   2M   125kbps 500kbps
+	255,	  0,   0,      0,   0,
+	0,        0,   0,      0,   0,
+	19,       0,   0,      0,   0,
+	39,       0,   0,      0,   0,
+	TELEC,
+	4, //NUM_OF_CHANNELS
+	//ch_num   1M   2M   125kbps 500kbps
+	255,	   0,   0,      0,   0,
+	0,	   0,   0,      0,   0,
+	19,        0,   0,      0,   0,
+	39,        0,   0,      0,   0,
+	WORLDWIDE,
+	4, //NUM_OF_CHANNELS
+	//ch_num   1M   2M   125kbps 500kbps
+	255,	   0,   0,      0,   0,
+	0,         0,   0,      0,   0,
+	19,        0,   0,      0,   0,
+	39,        0,   0,      0,   0,
+	KCC,
+	4, //NUM_OF_CHANNELS
+	//ch_num  1M   2M   125kbps 500kbps
+	255,	  0,   0,      0,   0,
+	0,	  0,   0,      0,   0,
+	19,       0,   0,      0,   0,
+	39,       0,   0,      0,   0,
+};

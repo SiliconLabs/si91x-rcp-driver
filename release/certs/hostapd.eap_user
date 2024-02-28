@@ -1,0 +1,8 @@
+
+
+"fastuser" FAST
+"peapuser" PEAP  
+"ttlsuser" TTLS 
+"tlsuser"  TLS  
+
+"test"  MSCHAPV2  "password" [2]	  

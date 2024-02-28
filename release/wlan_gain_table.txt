@@ -1,0 +1,69 @@
+//!************************************************************
+//! INSTRUCTIONS SHOULD BE FOLLOWED TO EDIT BELOW GAIN TABLES:
+//!************************************************************
+//! 1. Each value should be seperated by ',' and space characters.
+//! 2. Multi-line comments not supported. (Eg. /* comment */)
+//! 3. A space before comment is needed, for in-line comments. (Eg. <Data> //<Comment>)
+//! 4. Hexa-decimal numbers not supported.
+//! 5. No space between value and ',' character.
+//! 6. Table with size more than 128 bytes is not supported.
+//! 7. Supported table names and their maximum supported size are
+//!     For 2GHz 20MHz --- _RS9116_HP_MODE_REGION_BASED_RATE_VS_MAXPOWER_SINGLE_BAND_NONHPM		MAX_LENGTH = 128
+//!    NOTE: No support for other table names.
+//! 8. Gain table Format:
+//!    
+//!    <TABLE NAME>[] = { //<COMMENTS if any>
+//!    <NO.of Regions>,
+//!        <REGION NAME 1>, <NO.OF CHANNELS IN THIS REGION>,
+//!            <CHANNEL NUMBER 1>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>,  
+//!            <CHANNEL NUMBER 2>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!            .
+//!            .
+//!            <CHANNEL NUMBER m-1>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!            <CHANNEL NUMBER m>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!        <REGION NAME 2>, <NO.OF CHANNELS IN THIS REGION>,
+//!            <CHANNEL NUMBER 1>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!            <CHANNEL NUMBER 2>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!            .
+//!            .
+//!            <CHANNEL NUMBER m-1>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!            <CHANNEL NUMBER m>, <MAX POWER FOR b RATE>, <MAX POWER FOR g RATE>, <MAX POWER FOR n RATE>, <MAX POWER FOR 11ax RATE>, 
+//!        <REGION NAME 3>, <NO.OF CHANNELS IN THIS REGION>,
+//!        .
+//!        .
+//!        <REGION NAME y>, <NO.OF CHANNELS IN THIS REGION>,
+//!    }; //<COMMENTS if any>
+//! 9. Supported Region names:
+//!     FCC, ETSI, TELEC, KCC
+//!
+
+// "*********Silicon Labs SiWx917 Sample Gain Table format *********"
+
+
+_RS9116_HP_MODE_REGION_BASED_RATE_VS_MAXPOWER_SINGLE_BAND_NONHPM[] = {
+4, //NUM_OF_REGIONS
+    FCC, 11, //NUM_OF_CHANNELS
+//   rate,  11b, 11g, 11n, 11ax
+        1,  34,  26,  21,  20,
+        2,  34,  28,  28,  26,
+        3,  40,  34,  34,  32,
+        4,  40,  36,  36,  34,
+        5,  40,  36,  36,  36,
+        6,  40,  36,  36,  36,
+        7,  40,  36,  36,  36,
+        8,  38,  34,  36,  34,
+        9,  38,  34,  36,  30,
+       10,  34,  30,  30,  22,
+       11,  34,  24,  22,  20,
+    ETSI, 17,
+       255, 36,  36,  36,  24,
+    TELEC, 36,
+        2,  34,  28,  32,  32,
+       10,  34,  34,  34,  34,
+       13,  34,  26,  24,  24,
+       14,  36,   0,   0,   0,
+    KCC, 17,
+       255, 36,  36,  36,  36,
+};
+
+

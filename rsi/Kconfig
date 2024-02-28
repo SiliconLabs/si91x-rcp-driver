@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config WLAN_VENDOR_RSI
+	bool "Redpine Signals Inc devices"
+	default y
+	---help---
+	  If you have a wireless card belonging to this class, say Y.
+
+	  Note that the answer to this question doesn't directly affect the
+	  kernel: saying N will just cause the configurator to skip all
+	  the questions about  cards. If you say Y, you will be asked for
+	  your specific card in the following questions.
+
+if WLAN_VENDOR_RSI
+
+config RSI_91X
+	tristate "Redpine Signals Inc 91x WLAN driver support"
+	depends on MAC80211
+	---help---
+	  This option enabes support for RSI 1x1 devices.
+	  Select M (recommended), if you have a RSI 1x1 wireless module.
+
+config RSI_DEBUGFS
+	bool "Redpine Signals Inc debug support"
+	depends on RSI_91X
+	default y
+	---help---
+	 Say Y, if you would like to enable debug support. This option
+	 creates debugfs entries.
+
+config RSI_SDIO
+	tristate "Redpine Signals SDIO bus support"
+	depends on MMC && RSI_91X
+	default m
+	---help---
+	  This option enables the SDIO bus support in rsi drivers.
+	  Select M (recommended), if you have a RSI 1x1 wireless module.
+
+config RSI_USB
+	tristate "Redpine Signals USB bus support"
+	depends on USB && RSI_91X
+	default m
+	---help---
+	  This option enables the USB bus support in rsi drivers.
+	  Select M (recommended), if you have a RSI 1x1 wireless module.
+
+config RSI_BT_ALONE
+	bool "Redpine Signals BT alone (classic/LE) mode support"
+	depends on RSI_91X
+	default n
+	---help---
+	  This option enables the BT classic alone upport in rsi drivers.
+	  Say Y, if you want to use this feature.
+
+config RSI_COEX_MODE
+	bool "Redpine Signals Wi-Fi BT Coex support"
+	depends on RSI_91X
+	default n
+	---help---
+	  This option enables the Wi-Fi BT coex support in rsi drivers.
+	  Select Y, if you have to use this feature.
+
+config CARACALLA_BOARD 
+	bool "Redpine device support on Caracalla board"
+	depends on RSI_91X
+	default n
+	---help---
+	  This option is used to support Caracalla board with RSI driver.
+	  Select Y, if you have to use this support.
+endif # WLAN_VENDOR_RSI

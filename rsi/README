@@ -1,0 +1,286 @@
+Description:
+============
+
+	This package contains Redpine open source driver (rsi) package for both RS9113 and RS9116 chip sets.
+	This file gives the instruction to build and install the driver. For instructions on complete usage of
+	the driver and module, please refer RSI_OpenSource_Driver_TRM.pdf in documents folder.
+
+Features Supported:
+===================
+	* Wi-Fi Station Mode
+	* 802.11 Legacy Power save
+       	* 802.11 UAPSD
+	* Hardware connection monitor
+	* Back ground scan and roaming
+	* 802.11d Regulatory
+	* Wi-Fi AP Mode
+	* WoWLAN
+	* Wi-Fi Direct mode
+	* BT-EDR mode
+	* BT-LE mode
+	* Wi-Fi BT Coex mode
+	* ZIGB end device mode
+	* Wi-Fi ZIGB end device coex mode
+	* ZIGB coordinator mode
+	* ZIGB router mode
+
+Package:
+========
+	Driver		: rsi [Source code]
+	Firmware	: RS9113_WLAN_QSPI.rps [For Wi-Fi only mode]
+			  RS9113_WLAN_BT_DUAL_MODE.rps [Wi-Fi Station + BT Classic + BT LE or BT alone mode]
+			  RS9113_AP_BT_DUAL_MODE.rps [Wi-Fi AP + BT Classic + BT LE]
+			  RS9113_WLAN_ZIGBEE.rps [Wi-Fi Station + ZigB End device mode]
+			  RS9113_ZIGBEE_COORDINATOR.rps [ZigB Cordinator]
+			  RS9113_ZIGBEE_ROUTER.rps [ZigB Router]
+			  RS9116_NLINK_WLAN_IMAGE.rps [Wi-Fi STA + Wi-Fi AP for RS9116 - Flash mode]
+			  RS9116_NLINK_WLAN_BT_IMAGE.rps [WLAN (STA+AP) + BT(DUAL mode) for RS9116 - Flash mode]
+			  RS9116_NLINK_WLAN_ZB_IMAGE.rps [WLAN sta + ZigB for RS9116 - Flash mode]
+			  RS9116_NLINK_ZB_COORDINATOR.rps [ZigB Router for RS9116-Flash mode]
+			  pmemdata [Wi-Fi station + AP for RS9116-RAM mode]
+			  pmemdata_wlan_bt_classic [Wi-fi(STA + AP) + BT(DUAL) for RS9116-RAM mode]
+			  pmemdata_wlan_zigb [Wi-fi(STA + AP) + ZigB for RS9116-RAM mode]
+			  pmemdata_zigb_coordinator [ZigB Co-ordinator for RS9116-RAM mode]
+			  pmemdata_zigb_router [ZigB Router for RS9116-RAM mode]
+	Release Notes	: Change log of the releases 
+	README		: Build, install and usage guide
+
+Build:
+======
+	* Copy relevant firmware file [as mentioned above] to /lib/firmware.
+	* To build driver from kernel source:
+		-> copy the driver to <kernel_source_path>/drivers/net/wireless
+		-> Move Makefile to Makefile_local
+		-> Move Makefile_ker to Makefile
+		-> Give 'make menuconfig' from kernel source 
+
+			$ make menuconfig
+
+		-> Go to 'Device Drivers -> Network device support -> Wireless LAN'
+		-> Select 'Redpine Signals Inc devices'
+		-> Select required interface (SDIO/USB).
+		-> Select CONFIG_RSI_HCI option for BT (classic/LE) alone mode.
+		-> Select CONFIG_RSI_COEX_MODE option for Wi-Fi + BT Coex mode. 
+		-> Select CONFIG_RSI_ZIGB option for Zigbee Mode and WLAN + Zigb Coex modes. 
+		-> Build driver using below commands
+
+			$ make SUBDIRS=drivers/net/wireless/rsi
+
+	* To build driver locally:
+		-> Edit Makefile and configure option as below:
+
+		-> Uncomment 'CONFIG_HW_SCAN_OFFLOAD=y' to use Hardware scan offload feature.
+		   By default this flag is enabled. It is recommened not to comment this flag
+		   [Particularly if you want to use back ground scanning and roaming feature].
+
+		-> Uncomment 'CONFIG_CARACALLA_BOARD=y' if you are working on Dell Caracalla
+		   board. By default 'EXTRA_CFLAGS += -DPLATFORM_X86' is enabled. For embedded
+		   platforms please comment this flag.
+
+		-> Uncomment 'CONFIG_RSI_WOW=y' if you want to use Wake-on-WLAN feature.
+
+		-> Uncomment 'CONFIG_RSI_P2P=y' if you want to use Wi-Fi direct (p2p) mode.
+
+		-> Uncomment 'CONFIG_RSI_HCI=y' in Makefile to run BT alone (classic/LE) mode.
+
+		-> Uncomment 'CONFIG_RSI_MULTI_MODE=y' in Makefile to enable multiple opermodes support
+											in driver.
+
+		-> Uncomment 'CONFIG_RSI_COEX_MODE=y' in Makefile to run Wi-Fi + BT Coex mode or
+								 Wi-Fi + ZigB end device coex mode.
+
+		-> Uncomment 'CONFIG_RSI_NO_SDIO_MULTIBLOCK=y' if your platform's SDIO host controller
+		   does not support multiblock mode. Do not uncomment this if you use USB interface.
+
+		-> Build driver using 'make'
+			$ make
+
+	* Binaries prepared: 
+		rsi_91x.ko, rsi_usb.ko and rsi_sdio.ko
+
+Install:
+========
+	* insmod rsi_91x.ko rsi_zone_enabled=0x1f dev_oper_mode=1
+	where
+     	bit 0 - error zone
+      	bit 1 - info zone (generic debug messages)
+      	bit 2 - init zone
+      	bit 3 - mgmt tx zone
+      	bit 4 - mgmt rx zone
+      	bit 5 - data tx zone
+      	bit 6 - data rx zone
+      	bit 7 - fsm zone
+      	bit 8 - isr zone
+
+      To enable error and info zone use below command:
+      $ insmod rsi_91x.ko rsi_zone_enabled=0x3 dev_oper_mode=<val> 
+		or
+      To use multiple modules with multiple opermodes, use below command:
+      $ insmod rsi_91x.ko rsi_zone_enabled=0x3 dev_oper_mode=<val1>,<val2>,<val3>,<val4>,<val5>		# Max support for mulltiple dev_oper_modes for multiple modules are 5.
+
+	  where val:
+	  1 - Wi-Fi alone mode
+	  4 - BT alone mode
+	  8 - BT LE alone mode
+	  12 - BT classic + BT LE
+	  5 - Wi-Fi station + BT classic mode
+	  9 - Wi-Fi station + BT LE mode
+	  13 - Wi-Fi station + BT dual mode
+	  6 - Wi-Fi AP + BT classic mode
+	  14 - Wi-Fi AP + BT dual mode
+	  16 - ZigB alone mode
+	  17 - Wi-Fi station + zigb station mode
+	  32 - Wi-Fi station + zigb coordinator mode
+	  48 - Wi-Fi station + zigb router mode
+
+	* device operating mode value can be found in the below 'sysfs' entries:
+		
+		$ cat /sys/module/rsi_91x/parameters/dev_oper_mode
+		  13
+
+	* If any invalid mode is given, the default mode 1 (Wi-Fi alone) is used.
+
+	* insmod rsi_usb.ko
+		or
+	* insmod rsi_sdio.ko
+
+      While using SDIO interface, To change SDIO clock, User can give their board specific SDIO clock using below command
+      $ insmod rsi_91x.ko rsi_zone_enabled=0x3 dev_oper_mode=13
+      $ insmod rsi_sdio.ko sdio_clock=50     # sdio_clock is in the range from 1 to 50. 
+
+Remove:
+=======
+	* rmmod rsi_usb 
+		or 
+	* rmmod rsi_sdio
+	* rmmod rsi_91x
+
+Station Mode
+============
+	* Use wpa_supplicant version 2.6 or above to verify the station connnectivity
+	* To use stand-alone station mode, add below line in wpa_supplicant configuration
+	  file
+		p2p_disabled=1
+
+AP Mode
+=======
+	* Run start_ap.sh script in scripts folder to start AP
+
+Concurrent Mode
+===============
+	* Concurrent mode is supported only in dev_oper_mode = 1[Wi-Fi alone mode].
+	* You can create AP or Station on default interface.
+	* To create a new interface use below command.
+
+	* For AP
+	$> iw dev <intf_name> interface add <new_intf> type __ap
+	Example: iw dev wlan0 interface add wlan1 type __ap
+
+	* For Station
+	$> iw dev <intf_name> interface add <new_intf> type managed
+
+Configure:
+==========
+	* Use iwconfig or iw to configure different parameters in device.
+	* Check below sections for individual commands usage
+
+Powersave configuration
+=======================
+* Powersave can be enabled or disable from command line using iwconfig / iw.
+
+* Use below commad to enable power save
+	$> iwconfig <intf_name> power on
+
+* Use below command to disable power save
+	$> iwconfig <intf_name> power off
+
+
+Background scanning:
+====================
+Background scanning is not directly supported in mac80211. Hence this feature
+is supported in rsi driver through debugfs.
+Firmware bgcan alone does not work for roaming. Hence it should be enable with
+supplicant bgscan.
+
+	* To verify the bgscan status and parameters
+
+		$> cat /sys/kernel/debug/phy<X>/bgscan
+
+	* To enable back ground scan and configure its parameters from debugfs:
+
+		$> echo 1 10 10 20 20 100 1 3 1 6 11 > /sys/kernel/debug/phy<X>/bgscan
+
+		1	- Enable background scan. 
+		10	- BGscan threshold (in dBM). This is the upper RSSI threshold.
+			  If the signal strength of connected beacon is less than this 
+			  threshold at bgscan interval bgscan will be performed otherwise 
+			  not performed. To always do bgscan this value can be given 0.
+		10	- RSSI tolerence threshold used in roaming. If the difference between 
+			  the current RSSI value of the connected Access Point and the RSSI 
+			  value of the Access Point from the previous background scan is greater 
+			  than the RSSI Tolerance Threshold, then the module performs a 
+			  background scan. Assigning a large value to this field will eliminate 
+			  this method of triggering background scans.
+		20	- Periodicity (in seconds). This is the back ground scan interval.
+			  Setting this value to 0 will disable the background scan
+		20	- active scan duraiton (in msecs). Active scan duration in each channel.
+			  Max value is 255ms.
+		100	- passive scan duration (in msecs). Passive scan duration in DFS channels.
+			  Max value is 255ms.
+		1	- two probe enable (directed and undirected probe alternates). 0 indicates 
+			  sending only broadcast probe.
+		3	- number of background scan channels. Max channels supported are 24.
+		1,6,11	- list of channels
+
+	* To enable all valid channels in the current regulatory domain, configure 0 in num of channel field
+		$> echo 1 10 10 20 20 100 0 > /sys/kernel/debug/phy<X>/bgscan
+
+	* To disable back ground scan from debugs:
+
+		$> echo 0 > /sys/kernel/debug/phy<X>/bgscan
+
+	* For checking the list of bgscan channels configured to device use below command
+		
+		$> cat /sys/kernel/debug/phy<X>/bgscan
+
+	  This will display the list of bgscan channels configured to device with DFS indication also
+
+
+Antenna Selection
+=================
+To select external antenna use the below command
+
+	$> iw phy <phyX> set antenna 1 0
+
+To move back to internal antenna
+
+	$> iw phy <phyX> set antenna 0 0
+
+Note: Make sure you put interface down before setting antenna and interface up after setting the antenna.
+
+Country Setting
+===============
+To set a country use below command
+
+	$> iw reg set <country_code>
+	
+	Eg: iw reg set IN (For India)
+
+To check the current regulatory domain
+
+	$> iw reg get
+
+Software RF-Kill verification
+=============================
+* rfkill package needs to be installed to verify software rfkill
+
+* Use below command to list the wireless interfaces in the system
+	$> rfkill list
+
+* Use below command to block an interface
+	$> rfkill block <interface_number_listed_in_rfkill_list>
+
+* Use below command to unblock an interface
+	$> rfkill unblock <interface_number_listed_in_rfkill_list>
+
+

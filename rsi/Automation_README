@@ -1,0 +1,25 @@
+Note : 
+	1. osd_common_insert.sh  file is used to enable different configuration option used by the driver.
+	2. start_rs9116.sh  file is used to load the driver along with different modes.
+	3. To use these scripts just connect our RS9116 Module to the platform and run start_rs9116.sh file.Command to execute the file : ./start_rs9116.sh <mode> 
+	4. Update sta_settings.conf file present in scripts folder as per use case.
+	5. Update ap configuration files (i.e. ap_open.conf,ap_wpa.conf etc) present in scripts folder as per use case.
+Diffrent modes :
+•	AP
+•	STA
+•	AP_STA(Here STA will be initiated first then AP. Configure the ap configuration files according before running the script).
+•	BT
+•	BLE
+•	STA_BT
+•	AP_BT
+•	STA_BLE
+•	AP_BLE
+•	STA_BT_BLE
+•	AP_BT_BLE
+Command to execute the file : ./start_rs9116.sh <mode>
+
+Note : 
+	1. For IMX6 Wand Borad do the following updation before running the script : 
+		a. Change "killall" commands with "pkill" in the script(start_rs9116.sh file).
+		b. Disable "rfkill unblock all " command from the script(start_rs9116.sh file).
+	2. For Linux PCs and RPI, no need to update anything.
