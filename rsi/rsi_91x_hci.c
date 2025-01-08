@@ -316,6 +316,28 @@ int rsi_bt_per_stats(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_l
   return 0;
 }
 
+int rsi_send_bb_read_data_to_app(struct rsi_hw *adapter, bb_rf_params_bt_t bb_rf_params_bt)
+{
+  struct sk_buff *skb_out = { 0 };
+  struct nlmsghdr *nlh;
+  int msg_size, res;
+  msg_size = sizeof(bb_rf_params_bt);
+  skb_out  = nlmsg_new(msg_size, 0);
+  if (!skb_out) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to allocate new skb\n", __func__);
+    return 0;
+  }
+
+  nlh = nlmsg_put(skb_out, adapter->bt_nl_pid, 0, NLMSG_DONE, msg_size, 0);
+  memcpy(nlmsg_data(nlh), &bb_rf_params_bt, msg_size);
+  res = nlmsg_unicast(adapter->nl_sk, skb_out, adapter->bt_nl_pid);
+  if (res < 0) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to send stats to App\n", __func__);
+    return -1;
+  }
+  return 0;
+}
+
 int rsi_process_rx_bt_per_stats(struct rsi_common *common, bt_stats_t bt_stats)
 {
   struct sk_buff *skb_out = NULL;
@@ -350,6 +372,10 @@ int rsi_bt_ble_update_gain_table(struct rsi_hw *adapter, struct nlmsghdr *nlh, i
     return -ENODEV;
   }
   rsi_dbg(MGMT_TX_ZONE, "%s: <==== Sending BT_BLE_GAIN_TABLE frame ====>\n", __func__);
+  if (common->acx_module == true) {
+    rsi_dbg(ERR_ZONE, " ERROR : Update BLE Gain table not supported for ACx module \n");
+    return -EINVAL;
+  }
 
   skb = dev_alloc_skb(payload_len);
   if (!skb)
@@ -400,6 +426,7 @@ int rsi_hci_recv_pkt(struct rsi_common *common, u8 *pkt)
   int pkt_len                       = rsi_get_length(pkt, 0);
   u8 queue_no                       = rsi_get_queueno(pkt, 0);
   bt_stats_t bt_stats;
+  bb_rf_params_bt_t bb_rf_params_bt;
   char status;
 
   if ((common->bt_fsm_state == BT_DEVICE_NOT_READY) && (pkt[14] == BT_CARD_READY_IND)) {
@@ -446,11 +473,18 @@ int rsi_hci_recv_pkt(struct rsi_common *common, u8 *pkt)
         rsi_process_rx_bt_e2e_stats(common, bt_stats);
         return 0;
       case BT_PER:
-        rsi_dbg(MGMT_RX_ZONE, " Received BT PER STATS confirm from LMAC\n");
-        memcpy(&bt_stats, pkt + FRAME_DESC_SZ, sizeof(bt_stats_t));
-        rsi_hex_dump(MGMT_RX_ZONE, "BT PER STATS From LMAC", (char *)&bt_stats, sizeof(bt_stats_t));
-        rsi_set_event(&common->rsi_bt_per_event);
-        rsi_process_rx_bt_per_stats(common, bt_stats);
+        if (common->priv->bb_read_cmd) {
+          rsi_dbg(MGMT_RX_ZONE, " Received BB_READ confirm from LMAC\n");
+          memcpy(&bb_rf_params_bt.Data[0], pkt + FRAME_DESC_SZ, pkt_len);
+          bb_rf_params_bt.no_of_values = pkt_len / 2;
+          rsi_send_bb_read_data_to_app(common->priv, bb_rf_params_bt);
+        } else {
+          rsi_dbg(MGMT_RX_ZONE, " Received BT PER STATS confirm from LMAC\n");
+          memcpy(&bt_stats, pkt + FRAME_DESC_SZ, sizeof(bt_stats_t));
+          rsi_hex_dump(MGMT_RX_ZONE, "BT PER STATS From LMAC", (char *)&bt_stats, sizeof(bt_stats_t));
+          rsi_set_event(&common->rsi_bt_per_event);
+          rsi_process_rx_bt_per_stats(common, bt_stats);
+        }
         return 0;
       case BT_BLE_GAIN_TABLE:
         rsi_dbg(MGMT_RX_ZONE, " Received BT/BLE GAIN TABLE UPDATE confirm from LMAC\n");
@@ -553,9 +587,9 @@ int rsi_hci_attach(struct rsi_common *common)
     hdev->bus = HCI_USB;
 
   hci_set_drvdata(hdev, h_adapter);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
   hdev->dev_type = HCI_PRIMARY;
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
   hdev->dev_type = HCI_BREDR;
 #endif
   SET_HCIDEV_DEV(hdev, common->priv->device);

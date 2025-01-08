@@ -136,6 +136,12 @@ int rsi_hci_attach(struct rsi_common *common);
 void rsi_hci_detach(struct rsi_common *common);
 int rsi_hci_recv_pkt(struct rsi_common *common, u8 *pkt);
 
+int rsi_send_rfmode_frame(struct rsi_common *common);
+int rsi_process_rx_bt_e2e_stats(struct rsi_common *common, bt_stats_t bt_stats);
+int rsi_send_bb_read_data_to_app(struct rsi_hw *adapter, bb_rf_params_bt_t bb_rf_params_bt);
+int rsi_process_rx_bt_per_stats(struct rsi_common *common, bt_stats_t bt_stats);
+int rsi_process_rx_bt_ble_gain_table_update(struct rsi_common *common, unsigned short status);
+
 #ifdef CONFIG_RSI_BT_ANDROID
 int rsi_bdroid_init(struct rsi_common *common);
 void rsi_bdroid_deinit(struct rsi_common *common);

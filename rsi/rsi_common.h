@@ -118,8 +118,10 @@ struct rsi_sta *rsi_find_sta(struct rsi_common *common, u8 *mac_addr);
 void rsi_init_bcn_timer(struct rsi_common *common);
 void rsi_del_bcn_timer(struct rsi_common *common);
 void rsi_bcn_scheduler_thread(struct rsi_common *common);
+int rsi_response(struct rsi_hw *adapter, struct nlmsghdr *nlh, int status);
 #ifdef CONFIG_SDIO_INTR_POLL
 void init_sdio_intr_status_poll_thread(struct rsi_common *common);
+void rsi_sdio_intr_poll_scheduler_thread(struct rsi_common *common);
 #endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0)
 void rsi_roc_timeout(unsigned long data);

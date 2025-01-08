@@ -779,6 +779,8 @@ int rsi_prepare_beacon(struct rsi_common *common, struct sk_buff *skb, struct ie
   u8 vap_id                     = 0;
   int status                    = 0;
   u16 tim_offset                = 0;
+  u8 index                      = 0;
+  u8 ie_id, ie_len;
 
 #ifndef CONFIG_STA_PLUS_AP
   mac_bcn = ieee80211_beacon_get_tim(adapter->hw,
@@ -834,6 +836,24 @@ int rsi_prepare_beacon(struct rsi_common *common, struct sk_buff *skb, struct ie
 
   if (mac_bcn->data[tim_offset + 2] == 0)
     bcn_frm->desc_word[3] |= cpu_to_le16(DTIM_BEACON);
+
+  if (common->acx_module == true) {
+
+    index = 36; //mac header(24) + fixed params(12)
+
+    while (index < (mac_bcn->len)) {
+      ie_id  = mac_bcn->data[index];
+      ie_len = mac_bcn->data[index + 1];
+      if (ie_id == BEACON_COUNTRY_IE) {
+        rsi_dbg(INFO_ZONE, "Country IE is enabled \n");
+        memmove(mac_bcn->data + index, mac_bcn->data + index + ie_len + 2, mac_bcn->len - (index + ie_len + 2));
+        mac_bcn->len          = mac_bcn->len - ie_len - 2;
+        bcn_frm->desc_word[0] = cpu_to_le16(mac_bcn->len | (RSI_WIFI_DATA_Q << 12));
+        continue;
+      }
+      index += (2 + ie_len);
+    }
+  }
 
   memcpy(&skb->data[FRAME_DESC_SZ], mac_bcn->data, mac_bcn->len);
   skb_put(skb, mac_bcn->len + FRAME_DESC_SZ);
@@ -1434,9 +1454,7 @@ static int rsi_load_9116_firmware(struct rsi_hw *adapter)
   u32 base_address;
   u32 block_size;
   struct lmac_version_info *version_info;
-#ifndef _9117_MACRO_DEF
   u32 chip_rev = 0;
-#endif
 
   rsi_dbg(INIT_ZONE, "***** Load 9116 TA Instructions *****\n");
 

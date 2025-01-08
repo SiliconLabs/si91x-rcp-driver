@@ -18,6 +18,8 @@ all:
 	$(CC) -o ble_receive ble_receive.c per_sock.c $(CFLAGS)
 	$(CC) -o transmit_packet transmit_packet.c per_sock.c $(CFLAGS)
 	$(CC) -o bbp_util matlab_utils.c per_sock.c -lm -lpthread $(CFLAGS)
+	#Uncomment the -D DEBUG flags in the below statement to increase log level for cmfg
+	$(CC) -o mfg cmfg/*.c -Icmfg/ #-D DEBUG
 
 	@echo -e "Copying to release folder...."
 	$(cpy) receive ../release/
@@ -29,3 +31,4 @@ all:
 	$(cpy) transmit_packet ../release/
 	$(cpy) bt_ble_gain_table_update ../release/
 	$(cpy) bbp_util ../release/
+	$(cpy) mfg ../release/

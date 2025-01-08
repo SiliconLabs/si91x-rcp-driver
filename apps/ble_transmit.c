@@ -198,7 +198,16 @@ int main(int argc, char *argv[])
       printf("Invalid rf chain \n");
       return ONEBOX_STATUS_FAILURE;
     }
-
+//__9117_CODE_START
+#ifdef CONFIG_917
+    if ((ble_per_params.ble_rate == BLE_2MBPS)) {
+      if ((ble_per_params.bt_tx_rf_chnl == 39) || (ble_per_params.bt_rx_rf_chnl == 39)) {
+        printf("invalid rf channel configuration");
+        return ONEBOX_STATUS_FAILURE;
+      }
+    }
+#endif
+    //__9117_CODE_END
     printf("the packet length is %d \n", ble_per_params.pkt_length);
 
     bb_rf_params.value        = PER_BLE_TRANSMIT;

@@ -11,6 +11,7 @@
 #include <linux/if.h>
 #include <stdlib.h>
 #include <linux/wireless.h>
+#include <linux/errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -210,10 +211,10 @@ int main(int argc, char *argv[])
   int_32 sfd;
   update_bt_ble_gain_table_t table_info;
   uint_16 max_struct_length;
-  uint_16 status;
+  int_16 status;
 
   FILE *fp;
-  uint_32 string_matched, i, max_check, str_indx;
+  uint_32 string_matched, i = 0, max_check, str_indx;
   uint_32 ret = ONEBOX_STATUS_SUCCESS, count, comment_decoded = 0;
   int_32 no_of_structs = 0;
   uint_8 str[MAX_STRUCT_SIZE], *str_tmp, ch;
@@ -382,7 +383,11 @@ string_matched:
       if (status == 0) {
         printf("Gain table updated successfully \n\n");
       } else {
-        printf("Gain table update failed with status : %x \n\n", status);
+        if (status == -EINVAL) {
+          printf("ERROR : Update BLE Gain table not supported for ACx modules \n\n", status);
+        } else {
+          printf("Gain table update failed with status : %x \n\n", status);
+        }
         goto file_failure;
       }
     }

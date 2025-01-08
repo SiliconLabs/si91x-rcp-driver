@@ -14,6 +14,12 @@
 
 struct rsi_hw *adapter_g;
 
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+#define SD_REQUEST_MASTER 0x10000
+#define READ_BLOCK        16
+#define WRITE_BLOCK       256
+#endif
+
 int rsi_response(struct rsi_hw *adapter, struct nlmsghdr *nlh, int status)
 {
   struct sk_buff *skb_out  = NULL;
@@ -36,6 +42,165 @@ int rsi_response(struct rsi_hw *adapter, struct nlmsghdr *nlh, int status)
   return 0;
 }
 
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+/* Send response packet with data regarding mfg application */
+int rsi_mfg_response(struct rsi_hw *adapter, struct nlmsghdr *nlh, int size)
+{
+  struct sk_buff *skb_out  = NULL;
+  struct rsi_hw *adapter_n = adapter;
+  int res;
+  skb_out = nlmsg_new(size, 0);
+  if (!skb_out) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to allocate skb\n", __func__);
+    return -1;
+  }
+  nlh = nlmsg_put(skb_out, adapter_n->wlan_nl_pid, 0, NLMSG_DONE, size, 0);
+  memcpy(nlmsg_data(nlh), adapter_n->mfg_rw.data, size);
+  rsi_dbg(MGMT_RX_ZONE, "<==== Sending Response to cmfg Application ====>\n");
+  res = nlmsg_unicast(adapter_n->nl_sk, skb_out, adapter_n->wlan_nl_pid);
+  if (res < 0) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to send response to cmfg Application\n", __func__);
+    return -1;
+  }
+  return 0;
+}
+
+/* Read data from the specified memory region */
+int rsi_sdio_read_data_region(struct rsi_hw *adapter,
+                              u32 base_address,
+                              u32 instructions_sz,
+                              u16 block_size,
+                              u8 *read_buffer)
+{
+  u32 num_blocks;
+  u16 msb_address;
+  u32 offset, ii;
+  u8 *temp_buf;
+  u16 lsb_address;
+  struct rsi_host_intf_ops *hif_ops = adapter->host_intf_ops;
+
+  temp_buf = kzalloc(block_size, GFP_KERNEL);
+  if (!temp_buf)
+    return -ENOMEM;
+
+  num_blocks  = instructions_sz / block_size;
+  msb_address = base_address >> 16;
+
+  rsi_dbg(INFO_ZONE, "ins_size: %d\n", instructions_sz);
+  rsi_dbg(INFO_ZONE, "num_blocks: %d\n", num_blocks);
+
+  /* Loading DM ms word in the sdio slave */
+  if (hif_ops->master_access_msword(adapter, msb_address)) {
+    rsi_dbg(ERR_ZONE, "%s: Unable to set ms word reg\n", __func__);
+    goto err;
+  }
+
+  for (offset = 0, ii = 0; ii < num_blocks; ii++, offset += block_size) {
+    memset(temp_buf, 0, block_size);
+    lsb_address = (u16)base_address;
+    if (hif_ops->read_reg_multiple(adapter, lsb_address | SD_REQUEST_MASTER, temp_buf, block_size)) {
+      rsi_dbg(ERR_ZONE, "%s: failed to write\n", __func__);
+      goto err;
+    }
+    rsi_dbg(INFO_ZONE, "%s: loading block: %d\n", __func__, ii);
+    memcpy(read_buffer + offset, temp_buf, block_size);
+    base_address += block_size;
+
+    if ((base_address >> 16) != msb_address) {
+      msb_address += 1;
+
+      /* Loading DM ms word in the sdio slave */
+      if (hif_ops->master_access_msword(adapter, msb_address)) {
+        rsi_dbg(ERR_ZONE, "%s: Unable to set ms word reg\n", __func__);
+        goto err;
+      }
+    }
+  }
+
+  if (instructions_sz % block_size) {
+    memset(temp_buf, 0, block_size);
+    lsb_address = (u16)base_address;
+    if (hif_ops->read_reg_multiple(adapter, lsb_address | SD_REQUEST_MASTER, temp_buf, instructions_sz % block_size)) {
+      goto err;
+    }
+    rsi_dbg(INFO_ZONE, "Written Last Block in Address 0x%x Successfully\n", offset | SD_REQUEST_MASTER);
+    memcpy(read_buffer + offset, temp_buf, block_size);
+  }
+  kfree(temp_buf);
+  return 0;
+
+err:
+  kfree(temp_buf);
+  return -EIO;
+}
+
+/* Write data to specified memory region */
+int rsi_sdio_write_data_region(struct rsi_hw *adapter, u32 base_address, u32 instructions_sz, u16 block_size, u8 *data)
+{
+  u32 num_blocks;
+  u16 msb_address;
+  u32 offset, ii;
+  u8 *temp_buf;
+  u16 lsb_address;
+  struct rsi_host_intf_ops *hif_ops = adapter->host_intf_ops;
+
+  temp_buf = kzalloc(block_size, GFP_KERNEL);
+  if (!temp_buf)
+    return -ENOMEM;
+
+  num_blocks  = instructions_sz / block_size;
+  msb_address = base_address >> 16;
+
+  rsi_dbg(INFO_ZONE, "ins_size: %d\n", instructions_sz);
+  rsi_dbg(INFO_ZONE, "num_blocks: %d\n", num_blocks);
+
+  /* Loading DM ms word in the sdio slave */
+  if (hif_ops->master_access_msword(adapter, msb_address)) {
+    rsi_dbg(ERR_ZONE, "%s: Unable to set ms word reg\n", __func__);
+    goto err;
+  }
+
+  for (offset = 0, ii = 0; ii < num_blocks; ii++, offset += block_size) {
+    memset(temp_buf, 0, block_size);
+    memcpy(temp_buf, data + offset, block_size);
+    lsb_address = (u16)base_address;
+    if (hif_ops->write_reg_multiple(adapter, lsb_address | SD_REQUEST_MASTER, temp_buf, block_size)) {
+      rsi_dbg(ERR_ZONE, "%s: failed to write\n", __func__);
+      goto err;
+    }
+    rsi_dbg(INFO_ZONE, "%s: loading block: %d\n", __func__, ii);
+    base_address += block_size;
+
+    if ((base_address >> 16) != msb_address) {
+      msb_address += 1;
+
+      /* Loading DM ms word in the sdio slave */
+      if (hif_ops->master_access_msword(adapter, msb_address)) {
+        rsi_dbg(ERR_ZONE, "%s: Unable to set ms word reg\n", __func__);
+        goto err;
+      }
+    }
+  }
+
+  if (instructions_sz % block_size) {
+    memset(temp_buf, 0, block_size);
+    memcpy(temp_buf, data + offset, instructions_sz % block_size);
+    lsb_address = (u16)base_address;
+    if (hif_ops->write_reg_multiple(adapter, lsb_address | SD_REQUEST_MASTER, temp_buf, instructions_sz % block_size)) {
+      goto err;
+    }
+    rsi_dbg(INFO_ZONE, "Written Last Block in Address 0x%x Successfully\n", offset | SD_REQUEST_MASTER);
+  }
+  kfree(temp_buf);
+  return 0;
+
+err:
+  kfree(temp_buf);
+  return -EIO;
+}
+
+#endif
+
 static void rsi_nl_recv_msg(struct sk_buff *skb)
 {
   //__9117_CODE_START
@@ -52,10 +217,12 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
   struct rsi_common *common = adapter->priv;
   bb_rf_params_bt_t bb_rf_params_bt;
 #endif
+
   //__9117_CODE_START
   u16 prev_bmiss_threshold_value;
 #ifdef CONFIG_TWT_SUPPORT
   wifi_reschedule_twt_config_t reschedule_twt_config;
+  twt_selection_t user_config;
 #endif
   //__9117_CODE_END
   struct rsi_nl_desc *nl_desc = NULL;
@@ -88,9 +255,11 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
         }
         break;
       case UPDATE_WLAN_GAIN_TABLE:
+        adapter->wlan_nl_pid = pid;
         if (adapter->priv->fsm_state == FSM_MAC_INIT_DONE) {
-          payload_len = nl_desc->desc_word[1];
-          rsi_update_wlan_gain_table(adapter, nlh, payload_len);
+          payload_len               = nl_desc->desc_word[1];
+          adapter->gaintable_status = rsi_update_wlan_gain_table(adapter, nlh, payload_len);
+          send_gaintable_status_to_app(adapter);
         } else {
           rsi_dbg(INFO_ZONE, "%s: uninitialized fsm state\n", __func__);
           return;
@@ -144,6 +313,48 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
           rsi_dbg(ERR_ZONE, "Driver not installed before issuing command\n");
         }
         break;
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+      case MANUFACTURING:
+        rsi_dbg(ERR_ZONE, "Manufacturing mode operations in progress\n");
+        adapter->wlan_nl_pid = pid;
+        payload_len          = sizeof(adapter->mfg_rw);
+        memcpy((&adapter->mfg_rw), nlmsg_data(nlh) + FRAME_DESC_SZ, payload_len);
+        rsi_dbg(ERR_ZONE, "Mode of Read(R)/Write(W) operation = %c\n", adapter->mfg_rw.read_write);
+        if (adapter->mfg_rw.read_write == 'W') {
+          rsi_dbg(ERR_ZONE, "Performing write to device\n");
+          rsi_dbg(INFO_ZONE, "mfg_rw.address = %x\n", adapter->mfg_rw.address);
+          rsi_dbg(INFO_ZONE, "mfg_rw.length = %x\n", adapter->mfg_rw.length);
+          rsi_hex_dump(INFO_ZONE, "Write data", adapter->mfg_rw.data, adapter->mfg_rw.length);
+          rsi_sdio_write_data_region(adapter,
+                                     adapter->mfg_rw.address,
+                                     adapter->mfg_rw.length,
+                                     WRITE_BLOCK,
+                                     adapter->mfg_rw.data);
+        } else if (adapter->mfg_rw.read_write == 'R') {
+          rsi_dbg(ERR_ZONE, "Performing read from device\n");
+          rsi_dbg(INFO_ZONE, "mfg_rw.address = %x\n", adapter->mfg_rw.address);
+          rsi_dbg(INFO_ZONE, "mfg_rw.length = %x\n", adapter->mfg_rw.length);
+          rsi_sdio_read_data_region(adapter,
+                                    adapter->mfg_rw.address,
+                                    adapter->mfg_rw.length,
+                                    READ_BLOCK,
+                                    adapter->mfg_rw.data);
+          rsi_hex_dump(INFO_ZONE, "Read data", adapter->mfg_rw.data, adapter->mfg_rw.length);
+          rsi_mfg_response(adapter, nlh, adapter->mfg_rw.length);
+        } else if (adapter->mfg_rw.read_write == 'X') {
+          rsi_dbg(ERR_ZONE, "Performing Reset of the device using the below values\n");
+          rsi_dbg(ERR_ZONE, "mfg_rw.address = %x\n", adapter->mfg_rw.address);
+          rsi_dbg(ERR_ZONE, "mfg_rw.length = %x\n", adapter->mfg_rw.length);
+          rsi_dbg(ERR_ZONE, "mfg_rw.reset_value = %x\n", adapter->mfg_rw.reset_value);
+          rsi_sdio_write_data_region(adapter,
+                                     adapter->mfg_rw.address,
+                                     adapter->mfg_rw.length,
+                                     WRITE_BLOCK,
+                                     adapter->mfg_rw.data);
+        }
+        rsi_dbg(ERR_ZONE, "End of Manufacturing mode operations\n\n");
+        break;
+#endif
 #ifdef CONFIG_TWT_SUPPORT
       case TWT_CONFIG_CMD:
         adapter->wlan_nl_pid = pid;
@@ -209,6 +420,34 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
         }
 
         break;
+      case TWT_AUTO_CONFIG:
+        payload_len = sizeof(twt_selection_t);
+        memset(&user_config, 0, sizeof(twt_selection_t));
+        memcpy(&user_config, nlmsg_data(nlh) + FRAME_DESC_SZ, payload_len);
+        if (use_case_based_twt_params_configuration(adapter, &user_config) == -1) {
+          rsi_dbg(ERR_ZONE, "%s: TWT_AUTO_CONFIG Failed\n", __func__);
+          adapter->twt_current_status = TWT_AUTO_CONFIG_FAIL;
+        }
+        memcpy(&adapter->user_twt_auto_config, &user_config, sizeof(twt_selection_t));
+        if (adapter->ax_params._11ax_enabled) {
+          if (user_config.twt_enable) {
+            adapter->twt_auto_config_enable = 1;
+            adapter->twt_retry_count_limit  = 0;
+            send_twt_setup_frame(adapter, 0, NULL);
+          } else {
+            send_twt_teardown_frame(adapter,
+                                    adapter->rsi_twt_config.twt_flow_id,
+                                    adapter->rsi_twt_config.negotiation_type);
+            send_twt_session_details_to_lmac(adapter,
+                                             0,
+                                             adapter->rsi_twt_config.twt_flow_id,
+                                             NULL,
+                                             &adapter->rsi_twt_config);
+            adapter->twt_current_status = TWT_TEARDOWN_SUCC;
+          }
+        } else
+          rsi_dbg(ERR_ZONE, "STA is not yet connected to AP, TWT Setup/Teardown will trigger after connection\n");
+        break;
 #endif
       case SET_BMISS_THRESHOLD:
         if (adapter->device_model >= RSI_DEV_9117) {
@@ -267,13 +506,16 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
         break;
         //__9117_CODE_END
       case WLAN_9116_FEATURE:
-        memcpy(&adapter->priv->w9116_features, nlmsg_data(nlh) + FRAME_DESC_SZ, sizeof(struct rsi_wlan_9116_features));
+        memcpy(&adapter->priv->w9116_features, nlmsg_data(nlh) + FRAME_DESC_SZ, sizeof(struct rsi_9116_features));
         rsi_send_w9116_features(adapter->priv);
         break;
       default:
         rsi_dbg(ERR_ZONE, "Invalid Message Type\n");
     }
   } else if (pkt_type == BT_PACKET || pkt_type == BLE_PACKET) {
+    adapter->read_cmd    = 0;
+    adapter->bb_read_cmd = 0;
+
     switch (cmd) {
 #if defined(CONFIG_RSI_COEX_MODE) || defined(CONFIG_RSI_BT_ALONE)
       case BT_PER:
@@ -307,6 +549,8 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
           case PER_BR_EDR_TRANSMIT:
           case PER_BLE_TRANSMIT:
             adapter->tx_running = bb_rf_params_bt.Data[0];
+          case BB_READ:
+            adapter->bb_read_cmd = 1;
         }
         rsi_dbg(INFO_ZONE, "BT PER STATS Request from Application\n");
         adapter->bt_nl_pid = pid;
@@ -346,8 +590,10 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
         payload_len        = nl_desc->desc_word[1];
         rsi_hex_dump(DATA_TX_ZONE, "TX BT pkt", skb->data, skb->len);
         status = rsi_bt_ble_update_gain_table(adapter, nlh, payload_len, cmd);
-        if (status < 0)
+        if (status < 0) {
+          rsi_process_rx_bt_ble_gain_table_update(common, status);
           rsi_dbg(ERR_ZONE, " Failed in BT/BLE GAIN TABLE UPDATE\n");
+        }
         break;
 #endif
       default:

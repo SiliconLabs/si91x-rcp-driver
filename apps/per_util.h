@@ -333,6 +333,9 @@ typedef struct wlan_9116_features_s {
 #define RSI_MULTIPLE_BB_READ 0x03
 #define RSI_SET_BB_RF        5
 #define MASTER_OPS           0xA1
+#define SOC_REG_WRITE        18
+#define SOC_REG_READ         19
+
 struct bb_rf_param_t {
   unsigned short Data[1024];
   unsigned short no_of_fields;
@@ -477,6 +480,7 @@ unsigned int validate_11ax_lsig_len(per_params_t *per_params);
 #define TWT_CONFIG               11
 #define TWT_STATUS               13
 #define RESCHEDULE_TWT           17
+#define TWT_AUTO_CONFIG          23
 #define MAX_TWT_SUSPEND_DURATION 0x5265c00
 
 //TWT STATUS CODES
@@ -499,6 +503,7 @@ unsigned int validate_11ax_lsig_len(per_params_t *per_params);
 #define TWT_INACTIVE_NO_AP_SUPPORT          16
 #define TWT_RESCHEDULE_SUCC                 17
 #define TWT_RESCHEDULE_FAIL                 18
+#define TWT_AUTO_CONFIG_FAIL                19
 
 // TWT request structure to configure a session
 typedef struct rsi_twt_user_params_s {
@@ -572,6 +577,31 @@ typedef struct {
   uint64_t suspend_duration;
 } wifi_reschedule_twt_config_t;
 
+// Use case based twt selection
+typedef struct twt_selection_s {
+  uint8_t twt_enable;
+  uint16_t avg_tx_throughput;
+  uint32_t tx_latency;
+  uint32_t rx_latency;
+  uint16_t device_avg_throughput;
+  uint8_t estimated_extra_wake_duration_percent;
+  uint8_t twt_tolerable_deviation;
+  uint32_t default_wake_interval_ms;
+  uint32_t default_minimum_wake_duration_ms;
+  uint8_t beacon_wake_up_count_after_sp;
+} twt_selection_t;
+
+#define DEVICE_AVG_THROUGHPUT                20000
+#define ESTIMATE_EXTRA_WAKE_DURATION_PERCENT 0
+#define TWT_TOLERABLE_DEVIATION              10
+#define TWT_DEFAULT_WAKE_INTERVAL_MS         1024     // in milli seconds
+#define TWT_DEFAULT_WAKE_DURATION_MS         8        // in milli seconds
+#define MAX_TX_AND_RX_LATENCY_LIMIT          22118400 // 6hrs in milli seconds
+#define MAX_BEACON_WAKE_UP_AFTER_SP \
+  2 // The number of beacons after the service period completion for which the module wakes up and listens for any pending RX.
+#define MIN_OF_2(X, Y)    (X > Y) ? Y : X
+#define MIN_OF_3(A, B, C) (A > B) ? ((B > C) ? C : B) : ((A > C) ? C : A)
+
 int check_twt_status(rsi_twt_status_resp *twt_resp, int sfd, struct nlmsghdr *nlh);
 int twt_status_wrapper(int sock_fd, int len);
 int twt_config_wrapper(rsi_twt_user_params twt_params, int sock_fd);
@@ -621,7 +651,7 @@ int per_transmit_packet_wrapper(per_packet_t per_packet, int cmd, int sock_fd);
 int per_transmit_wrapper(per_params_t per_params, int cmd, int sock_fd);
 int send_get_rssi_frame_to_drv(int sock_fd);
 int send_filter_broadcast_frame_to_drv(struct fltr_bcast bcast, int sock_fd);
-int send_bb_write_frame_to_drv(struct bb_rf_param_bt_t bb_rf_params, int sfd);
+int send_bb_read_write_frame_to_drv(struct bb_rf_param_bt_t bb_rf_params, int sfd);
 #define ONEBOX_STATUS_FAILURE      -1
 #define ONEBOX_STATUS_SUCCESS      0
 #define ONEBOX_STATUS              int_32

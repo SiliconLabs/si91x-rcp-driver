@@ -372,6 +372,11 @@ module_param(enable_encap_offload, bool, S_IRUGO);
 MODULE_PARM_DESC(enable_encap_offload, "\nenable_encap_offload\n\
 		'0' - Disable \n'1' - Enable\n");
 
+/* Skipping firmware loading is disabled by default */
+u16 skip_fw_load = 0;
+module_param(skip_fw_load, ushort, 0);
+MODULE_PARM_DESC(skip_fw_load, " 1 to Skip fw loading else 0");
+
 /**
  * rsi_dbg() - This function outputs informational messages.
  * @zone: Zone of interest for output message.
@@ -457,6 +462,17 @@ static char *opmode_str(int oper_mode)
 
 void rsi_print_version(struct rsi_common *common)
 {
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+  memcpy(common->driver_ver, DRV_VER, ARRAY_SIZE(DRV_VER));
+  common->driver_ver[ARRAY_SIZE(DRV_VER)] = '\0';
+  if (skip_fw_load != 0) {
+    rsi_dbg(ERR_ZONE, "================================================\n");
+    rsi_dbg(ERR_ZONE, "=========== FIRMWARE LOADING SKIPPED ===========\n");
+    rsi_dbg(ERR_ZONE, "================================================\n");
+    rsi_dbg(ERR_ZONE, "Driver Version\t: %s", common->driver_ver);
+    rsi_dbg(ERR_ZONE, "Operating mode\t: %d [%s]", common->oper_mode, opmode_str(common->oper_mode));
+  }
+#else
   struct rsi_hw *adapter = common->priv;
   memcpy(common->driver_ver, DRV_VER, ARRAY_SIZE(DRV_VER));
   common->driver_ver[ARRAY_SIZE(DRV_VER)] = '\0';
@@ -464,6 +480,7 @@ void rsi_print_version(struct rsi_common *common)
   rsi_dbg(ERR_ZONE, "================================================\n");
   rsi_dbg(ERR_ZONE, "================ RSI Version Info ==============\n");
   rsi_dbg(ERR_ZONE, "================================================\n");
+  //__9117_CODE_START
   if (adapter->device_model >= RSI_DEV_9117) {
     rsi_dbg(ERR_ZONE,
             "FW Version\t:  %04x.%d.%d.%d.%d.%d.%d\n",
@@ -474,7 +491,9 @@ void rsi_print_version(struct rsi_common *common)
             common->lmac_ver.patch_id,
             common->lmac_ver.customer_id,
             common->lmac_ver.build_id);
-  } else if (adapter->device_model == RSI_DEV_9116) {
+  } else
+    //__9117_CODE_END
+    if (adapter->device_model == RSI_DEV_9116) {
     rsi_dbg(ERR_ZONE,
             "FW Version\t:  %04x.%d.%d.%d.%d.%d\n",
             common->lmac_ver.chip_id,
@@ -494,6 +513,7 @@ void rsi_print_version(struct rsi_common *common)
   rsi_dbg(ERR_ZONE, "Operating mode\t: %d [%s]", common->oper_mode, opmode_str(common->oper_mode));
   rsi_dbg(ERR_ZONE, "Firmware file\t: %s", common->priv->fw_file_name);
   rsi_dbg(ERR_ZONE, "================================================\n");
+#endif
 }
 
 /**
@@ -702,7 +722,11 @@ void rsi_sdio_intr_poll_scheduler_thread(struct rsi_common *common)
     msleep(20);
 
   } while (atomic_read(&common->sdio_intr_poll_thread.thread_done) == 0);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
   complete_and_exit(&common->sdio_intr_poll_thread.completion, 0);
+#else
+  kthread_complete_and_exit(&common->sdio_intr_poll_thread.completion, 0);
+#endif
 }
 
 void init_sdio_intr_status_poll_thread(struct rsi_common *common)
@@ -814,6 +838,13 @@ struct rsi_hw *rsi_91x_init(void)
   }
   common       = adapter->priv;
   common->priv = adapter;
+
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+  if (skip_fw_load != 0) {
+    common->skip_fw_load = 1;
+    rsi_print_version(common);
+  }
+#endif
 
   for (ii = 0; ii < NUM_SOFT_QUEUES; ii++)
     skb_queue_head_init(&common->tx_queue[ii]);

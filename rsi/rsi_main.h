@@ -17,7 +17,7 @@ struct rsi_hw;
 
 #include "rsi_ps.h"
 
-#define DRV_VER "SiWT917.2.10.0.5"
+#define DRV_VER "SiWT917.2.13.0.4"
 #define ERR_ZONE        BIT(0)  /* Error Msgs		*/
 #define INFO_ZONE       BIT(1)  /* Generic Debug Msgs	*/
 #define INIT_ZONE       BIT(2)  /* Driver Init Msgs	*/
@@ -127,6 +127,11 @@ void rsi_hex_dump(u32 zone, char *msg_str, const u8 *msg, u32 len);
 
 #define DEV_MODEL_9116        (adapter->device_model >= RSI_DEV_9116)
 #define COMMON_DEV_MODEL_9116 (common->priv->device_model >= RSI_DEV_9116)
+
+//__9117_CODE_START
+#define PER_RATE_STATS_ENABLE_917 (BIT(9))
+//__9117_CODE_END
+#define PER_RATE_STATS_ENABLE 0
 
 //__9117_CODE_START
 #if defined(CONFIG_RSI_11K) && defined(RSI_DEBUG_RRM)
@@ -614,6 +619,8 @@ struct rsi_common {
   struct cfg80211_scan_request *scan_request;
   struct ieee80211_vif *scan_vif;
   bool scan_in_prog;
+  bool acx_module;
+  bool acx_stop_beacon;
   struct workqueue_struct *scan_workqueue;
   struct work_struct scan_work;
   struct rsi_event chan_set_event;
@@ -836,13 +843,33 @@ typedef struct {
   unsigned int rssi;
 } __attribute__((packed)) real_time_rx_stats;
 
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+
+#define MFG_READ  'R'
+#define MFG_WRITE 'W'
+#define MFG_RESET 'X'
+typedef struct mfg_rw_s {
+  uint32_t address;
+  uint16_t length;
+  uint8_t data[4110];
+  uint32_t reset_value;
+  char read_write;
+} mfg_rw_t;
+
+#endif
+
 #define SET_BMISS_THRESHOLD 14
 #define KEEP_ALIVE_PERIOD   15
-#define REAL_TIME_STATS     10
-#define TX_STAT_LENGTH      (sizeof(real_time_tx_stats))
-#define RX_STAT_LENGTH      (sizeof(real_time_rx_stats))
-#define TX_STATS            1
-#define RX_STATS            2
+
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+#define MANUFACTURING 16
+#endif
+
+#define REAL_TIME_STATS 10
+#define TX_STAT_LENGTH  (sizeof(real_time_tx_stats))
+#define RX_STAT_LENGTH  (sizeof(real_time_rx_stats))
+#define TX_STATS        1
+#define RX_STATS        2
 //__9117_CODE_END
 
 typedef struct {
@@ -1103,6 +1130,9 @@ struct rsi_ax_params {
 #define TWT_CONFIG             75
 #define NEXT_TWT_SUBFIELD_SIZE 3 //Next twt subfield size value of 3 indicates the size of next twt to be 64 bits
 #define TWT_INFO_FRAME_CONFIRM 0x4
+#define TWT_AUTO_CONFIG        23
+#define MIN_OF_2(X, Y)         (X > Y) ? Y : X
+#define MIN_OF_3(A, B, C)      (A > B) ? ((B > C) ? C : B) : ((A > C) ? C : A)
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 14, 21))
 enum ieee80211_twt_setup_cmd {
@@ -1137,6 +1167,7 @@ enum ieee80211_twt_setup_cmd {
 #define TWT_INACTIVE_NO_AP_SUPPORT          16
 #define TWT_RESCHEDULE_SUCC                 17
 #define TWT_RESCHEDULE_FAIL                 18
+#define TWT_AUTO_CONFIG_FAIL                19
 
 typedef struct rsi_twt_config_s {
   u8 wake_duration;
@@ -1158,6 +1189,8 @@ typedef struct rsi_twt_config_s {
   u8 req_type;
   u8 twt_enable;
   u8 twt_wake_duration_unit;
+  u32 rx_latency;
+  u8 beacon_wake_up_count_after_sp;
 } rsi_twt_config_t;
 
 typedef struct twt_element_s {
@@ -1243,6 +1276,19 @@ typedef struct {
   uint64_t suspend_duration;
 } wifi_reschedule_twt_config_t;
 
+typedef struct twt_selection_s {
+  uint8_t twt_enable;
+  uint16_t expected_tx_throughput;
+  uint32_t tx_latency;
+  uint32_t rx_latency;
+  uint16_t device_avg_throughput;
+  uint8_t estimated_extra_wake_duration_percent;
+  uint8_t twt_tolerable_deviation;
+  uint32_t default_wake_interval_ms;
+  uint32_t default_min_wake_duration_ms;
+  uint8_t beacon_wake_up_count_after_sp;
+} twt_selection_t;
+
 typedef struct twt_info_frame_s {
   uint8_t action_category;
   uint8_t action_type;
@@ -1288,6 +1334,8 @@ struct rsi_per_params {
 #define BUF_READ_REQ      0x6
 #define BUF_WRITE_REQ     0x7
 #define WLAN_9116_FEATURE 68
+#define SOC_REG_WRITE     18
+#define SOC_REG_READ      19
 
 typedef struct bb_rf_params_s {
   unsigned short Data[1024];
@@ -1396,6 +1444,7 @@ struct rsi_hw {
   u8 disable_programming;
   int wlan_nl_pid;
   int bt_nl_pid;
+  u8 bb_read_cmd;
   struct sock *nl_sk;
   per_stats sta_info;
   //__9117_CODE_START
@@ -1410,6 +1459,7 @@ struct rsi_hw {
   unsigned char bb_rf_rw;
   unsigned char soft_reset;
   u8 read_cmd;
+  s16 gaintable_status;
   s16 rx_rssi;
   unsigned long prev_rssi_fetch_time;
   u8 chip_rev;
@@ -1431,7 +1481,14 @@ struct rsi_hw {
   wifi_reschedule_twt_config_t reschedule_twt_config;
   u8 ap_twt_info_frame_support;
   bool twt_rescheduling_in_progress;
+  twt_selection_t user_twt_auto_config;
+  u8 twt_auto_config_enable;
 #endif
+
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+  struct mfg_rw_s mfg_rw;
+#endif
+
   //__9117_CODE_END
   struct master_params_s master_ops;
 };
@@ -1506,8 +1563,31 @@ int rsi_mgmt_send_bb_prog_frames(struct rsi_hw *adapter, unsigned short *bb_prog
 int rsi_do_master_ops(struct rsi_hw *w_adapter, u16 type);
 int rsi_bb_prog_data_to_app(struct rsi_hw *adapter);
 int send_rssi_to_app(struct rsi_hw *adapter);
+int send_gaintable_status_to_app(struct rsi_hw *adapter);
 int send_filter_broadcast_frame_to_fw(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len);
 int send_get_rssi_frame_to_fw(struct rsi_hw *adapter);
+
+int rsi_stats_frame(struct rsi_hw *adapter);
+int rsi_mgmt_send_rf_reset_req(struct rsi_hw *adapter, u16 *bb_prog_vals);
+int rsi_send_bb_reset_req(struct rsi_hw *adapter);
+int set_per_configurations(struct rsi_hw *adapter);
+int rsi_send_he_tb_mu_params(struct rsi_hw *adapter);
+int prepare_per_pkt(struct rsi_hw *adapter, struct sk_buff *skb);
+int do_continuous_send(struct rsi_hw *adapter);
+int send_per_frame(struct rsi_hw *adapter, unsigned char mode);
+int send_per_ampdu_indication_frame(struct rsi_common *common);
+int start_per_tx(struct rsi_hw *adapter);
+int rsi_start_ap(struct ieee80211_hw *hw,
+                 struct ieee80211_vif *vif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+                 ,
+                 struct ieee80211_bss_conf *link_conf
+#endif
+);
+int rsi_validate_pn(struct rsi_hw *adapter, struct ieee80211_hdr *hdr);
+char *rsi_vif_type_to_name(enum nl80211_iftype vif_type);
+void obm_configure_region(struct rsi_hw *adapter, u16 country_code);
+
 //__9117_CODE_START
 #define DIAG_TOOL_UPDATE 86
 int diag_tool_update_dpd_fw(struct rsi_hw *adapter,
@@ -1531,6 +1611,7 @@ int rsi_twt_status_resp_to_app(struct rsi_hw *adapter);
 int rsi_mgmt_process_twt_setup_resp(struct rsi_hw *adapter, struct sk_buff *skb);
 int validate_unsupported_twt_resp_params(struct rsi_hw *adapter, twt_setup_frame_t *twt_setup_frame);
 int send_twt_information_frame(struct rsi_hw *adapter, wifi_reschedule_twt_config_t reschedule_twt_config);
+int use_case_based_twt_params_configuration(struct rsi_hw *adapter, twt_selection_t *user_config);
 #endif
 int process_rx_mgmt_beacon(struct rsi_hw *adapter, struct sk_buff *skb);
 int rsi_process_mbssid_parameters(struct rsi_hw *adapter, struct ieee80211_mgmt *mgmt, u8 *ie_start, int ie_len);

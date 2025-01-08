@@ -67,6 +67,7 @@ static int rsi_version_read(struct seq_file *seq, void *data)
   struct rsi_common *common = seq->private;
   struct rsi_hw *adapter    = common->priv;
 
+  //__9117_CODE_START
   if (adapter->device_model >= RSI_DEV_9117) {
     seq_printf(seq,
                "Driver : %s\nLMAC   : %04x.%d.%d.%d.%d.%d.%d\n",
@@ -78,7 +79,9 @@ static int rsi_version_read(struct seq_file *seq, void *data)
                common->lmac_ver.patch_id,
                common->lmac_ver.customer_id,
                common->lmac_ver.build_id);
-  } else if (adapter->device_model == RSI_DEV_9116) {
+  } else
+    //__9117_CODE_END
+    if (adapter->device_model == RSI_DEV_9116) {
     seq_printf(seq,
                "Driver : %s\nLMAC   : %04x.%d.%d.%d.%d.%d\n",
                common->driver_ver,

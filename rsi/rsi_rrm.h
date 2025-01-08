@@ -187,4 +187,6 @@ void rsi_rrm_recv_cmd_frame(struct rsi_common *common, u8 *msg, int len);
 int rsi_prepare_channel_load_rpt(struct rsi_common *common, u8 *msg, int len);
 int rsi_prepare_frame_rpt(struct rsi_common *common, u8 *msg, int len);
 int rsi_prepare_beacon_rpt(struct rsi_common *common, u8 *msg, int len);
+int rsi_rrm_parse_frame_req(struct rsi_common *common, struct sk_buff *skb, struct rsi_frame_meas_params *params);
+int rsi_rrm_parse_beacon_req(struct rsi_common *common, struct sk_buff *skb, struct rsi_beacon_meas_params *params);
 #endif

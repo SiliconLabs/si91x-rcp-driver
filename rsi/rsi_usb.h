@@ -99,4 +99,10 @@ int rsi_usb_load_data_master_write(struct rsi_hw *adapter,
                                    u8 *ta_firmware);
 int rsi_usb_check_queue_status(struct rsi_hw *adapter, u8 q_num);
 int rsi_rx_urb_submit(struct rsi_hw *adapter, u8 ep_num);
+int usb_bulk_msg_rsi(struct usb_device *usb_dev,
+                     unsigned int pipe,
+                     void *data,
+                     int len,
+                     int *actual_length,
+                     int timeout);
 #endif

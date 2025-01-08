@@ -68,7 +68,10 @@ COMMAND_84_ERROR_WAR=y
 mac80211 will do scan
 OFFLOAD_SCAN_TO_DEVICE=y
 
-EXTRA_CFLAGS += -DLINUX -Wimplicit -Wstrict-prototypes -Wall -Wno-implicit-fallthrough
+#Uncomment below line to skip loading firmware
+#EXTRA_CFLAGS += -DNO_FIRMWARE_LOAD_SUPPORT
+
+EXTRA_CFLAGS += -DLINUX -Wimplicit -Wstrict-prototypes -Wall -Wno-implicit-fallthrough -Wno-address
 EXTRA_CFLAGS += -I$(PWD)/include
 EXTRA_CFLAGS += -DCONFIG_RSI_DEBUGFS
 
@@ -204,3 +207,4 @@ clean:
 	@find . -name 'onebox_util' | xargs rm -rf
 	@find . -name 'transmit' | xargs rm -rf
 	@find . -name 'transmit_packet' | xargs rm -rf
+	@find . -name 'mfg' | xargs rm -rf

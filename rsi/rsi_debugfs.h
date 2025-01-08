@@ -19,6 +19,7 @@ static inline void rsi_remove_dbgfs(struct rsi_hw *adapter)
 {
   return;
 }
+int rsi_validate_ps_params(struct rsi_common *common, int *ps_params_vals);
 //__9117_CODE_START
 static inline int rsi_init_917_dbgfs(struct rsi_hw *adapter)
 {
@@ -54,5 +55,6 @@ void rsi_remove_917_dbgfs(struct rsi_hw *adapter);
 //__9117_CODE_END
 int rsi_init_dbgfs(struct rsi_hw *adapter);
 void rsi_remove_dbgfs(struct rsi_hw *adapter);
+int rsi_validate_ps_params(struct rsi_common *common, int *ps_params_vals);
 #endif
 #endif

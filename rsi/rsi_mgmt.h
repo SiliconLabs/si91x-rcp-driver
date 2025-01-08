@@ -257,6 +257,8 @@ enum rx_cmd_type {
 
 #define RSI_TXPOWER_MIN -127
 
+#define BEACON_COUNTRY_IE 7
+
 #define ENABLE_MAC_INFO BIT(0)
 #define BROADCAST_IND   BIT(9)
 #define CONTINUOUS_MODE BIT(10)
@@ -356,7 +358,7 @@ enum cmd_frame_type {
   RF_LOOPBACK_REQ,        /* 0x1C */
   RF_LPBK_M3,             /* 0x1D */
   RF_RESET_FRAME,         /* 0x1E */
-  LMAC_REG_OPS,           /* 0x1F */
+  SOC_REG_OPS,            /* 0x1F */
   ANT_SEL_FRAME,          /* 0x20 */
   CONFIRM,                /* 0x21 */
   WLAN_DE_REGISTER,       /* 0x22 */
@@ -816,6 +818,13 @@ int rsi_validate_debugfs_bgscan_channels(struct rsi_common *common);
 int rsi_start_per_burst(struct rsi_hw *adapter);
 void init_traffic_timer(struct rsi_hw *adapter, unsigned long timeout);
 void check_traffic_pwr_save(struct rsi_hw *adapter);
+
+int ieee80211_chan_to_bw(struct rsi_hw *adapter, u8 op_class, u8 channel_num);
+int is_dfs_channel(struct rsi_hw *adapter, int channel);
+int rsi_send_common_dev_params(struct rsi_common *common);
+int rsi_bb_buffer_request_direct(struct rsi_hw *w_adapter, u16 *bb_buf_vals, u16 num_of_vals);
+int rsi_mgmt_soc_reg_ops_req(struct rsi_hw *adapter, unsigned short *bb_prog_vals, unsigned short type);
+
 #ifdef CONFIG_RSI_WOW
 int rsi_send_wowlan_request(struct rsi_common *common, u16 flags, u16 sleep_status);
 #endif

@@ -1887,6 +1887,14 @@ int rsi_set_channel(struct rsi_common *common, struct ieee80211_channel *channel
     dev_kfree_skb(skb);
     return 0;
   }
+
+  if ((common->driver_mode == E2E_MODE) && (common->acx_module == true)) {
+    if (channel->hw_value > 11) {
+      rsi_dbg(ERR_ZONE, "%s : Channel = %d not Supported for ACx Modules\n ", __func__, channel->hw_value);
+      return -EOPNOTSUPP;
+    }
+  }
+
   memset(skb->data, 0, FRAME_DESC_SZ);
   mgmt_frame = (struct rsi_mac_frame *)skb->data;
 
@@ -2512,6 +2520,12 @@ void rsi_validate_bgscan_channels(struct rsi_hw *adapter, struct bgscan_config_p
   rsi_dbg(INFO_ZONE, "Final bgscan channels:\n");
   for (cnt = 0; cnt < params->num_user_channels; cnt++) {
     ch_num = params->user_channels[cnt];
+    if (common->acx_module == true) {
+      if (ch_num > 11) {
+        rsi_dbg(ERR_ZONE, "Don't include channel = %d for ACx module ", ch_num);
+        continue;
+      }
+    }
 
     if ((ch_num < 1) || ((ch_num > 14) && (ch_num < 36)) || ((ch_num > 64) && (ch_num < 100))
         || ((ch_num > 140) && (ch_num < 149)) || (ch_num > 165))
@@ -3387,6 +3401,10 @@ int rsi_update_wlan_gain_table(struct rsi_hw *adapter, struct nlmsghdr *nlh, int
   struct rsi_mac_frame *gain_table = NULL;
 
   rsi_dbg(INT_MGMT_ZONE, "<=== Update WLAN Gain table ===>\n");
+  if (common->acx_module == true) {
+    rsi_dbg(ERR_ZONE, "ERROR : Update WLAN Gain table not supported for ACx module \n");
+    return -EINVAL;
+  }
 
   skb = dev_alloc_skb(FRAME_DESC_SZ + frame_len);
   if (!skb)
@@ -3630,10 +3648,15 @@ void rsi_scan_start(struct work_struct *work)
       continue;
 
 #ifndef CONFIG_STA_PLUS_AP
-    if (rsi_set_channel(common, cur_chan)) {
+    status = rsi_set_channel(common, cur_chan);
 #else
-    if (rsi_set_channel(common, cur_chan, vif)) {
+    status = rsi_set_channel(common, cur_chan, vif);
 #endif
+    if (status == -EOPNOTSUPP) {
+      rsi_dbg(ERR_ZONE, "Failed to set the channel for ACx\n");
+      init_channel_timer(common->priv, ACTIVE_SCAN_DURATION);
+      goto SKIP_PROBE;
+    } else if (status) {
       rsi_dbg(ERR_ZONE, "Failed to set the channel\n");
       break;
     }
@@ -3673,6 +3696,7 @@ void rsi_scan_start(struct work_struct *work)
         init_channel_timer(common->priv, ACTIVE_SCAN_DURATION);
       }
     }
+SKIP_PROBE:
     if (!common->scan_in_prog)
       break;
     if (common->iface_down)
@@ -3966,6 +3990,21 @@ static int rsi_handle_ta_confirm(struct rsi_common *common, u8 *msg)
       }
       break;
 
+    case SOC_REG_OPS:
+      rsi_dbg(FSM_ZONE, "SOC_REG_OPS: SOC REG Read confirm Received: msg_len: %d \n", msg_len);
+      if (msg_len > 0) {
+        rsi_hex_dump(ERR_ZONE, "Message", &msg[FRAME_DESC_SZ], msg_len);
+        memcpy((&adapter->bb_rf_read.Data[0]), &msg[FRAME_DESC_SZ], msg_len);
+        adapter->bb_rf_read.no_of_values = msg_len / 2;
+        rsi_dbg(FSM_ZONE,
+                "SOC_REG_OPS: msg_len is : %d no_of_vals is %d \n",
+                msg_len,
+                adapter->bb_rf_read.no_of_values);
+        if ((rsi_bb_prog_data_to_app(adapter)) < 0)
+          return -1;
+        rsi_dbg(INFO_ZONE, "%s : Success in Performing operation\n", __func__);
+      }
+      break;
     case BB_PROG_VALUES_REQUEST:
       rsi_dbg(FSM_ZONE, "BBP PROG STATS: Utils BB confirm Received: msg_len: %d \n", msg_len);
       if (msg_len > 0) {
@@ -3993,8 +4032,12 @@ static int rsi_handle_ta_confirm(struct rsi_common *common, u8 *msg)
             ieee80211_wake_queues(adapter->hw);
             complete(&common->wlan_init_completion);
             common->reinit_hw = false;
-          } else
-            return rsi_mac80211_attach(common);
+          } else {
+            if (common->driver_mode != RF_EVAL_MODE_ON)
+              return rsi_mac80211_attach(common);
+            else
+              return 0;
+          }
         }
       } else {
         rsi_dbg(INFO_ZONE, "%s: Received bb_rf cfm in %d state\n", __func__, common->fsm_state);
@@ -4019,6 +4062,7 @@ static int rsi_handle_ta_confirm(struct rsi_common *common, u8 *msg)
 
     case SCAN_REQUEST:
       rsi_dbg(INFO_ZONE, "Scan confirm.\n");
+      rsi_hex_dump(INFO_ZONE, "Scan Confirm", &msg[0], 16);
 #ifdef CONFIG_STA_PLUS_AP
       if (!vif) {
         /* FIXME: vif can be destroyed just before getting confirm from LMAC */
@@ -4157,6 +4201,15 @@ int rsi_handle_card_ready(struct rsi_common *common, u8 *msg)
 
   switch (common->fsm_state) {
     case FSM_CARD_NOT_READY:
+      if (msg[15] & BIT(0)) {
+        rsi_dbg(ERR_ZONE, " %s : ACx Module Detected \n", __func__);
+        common->acx_module = true;
+        if (msg[15] & BIT(1)) {
+          rsi_dbg(ERR_ZONE, "[%s] ERROR : Voltage Out of Range \n", __func__);
+          common->common_hal_tx_access = true;
+          return -EINVAL;
+        }
+      }
       rsi_dbg(INIT_ZONE, "Card ready indication from Common HAL\n");
       common->common_hal_tx_access = true;
       rsi_set_default_parameters(common);
@@ -4332,6 +4385,10 @@ int rsi_mgmt_pkt_recv(struct rsi_common *common, u8 *msg)
             common->eapol4_confirm = 1;
             if (!rsi_send_block_unblock_frame(common, false))
               common->hw_data_qs_blocked = false;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+            if (adapter->user_ps_en)
+              rsi_enable_ps(adapter);
+#endif
               //__9117_CODE_START
 #ifdef CONFIG_TWT_SUPPORT
             if (adapter->ax_params._11ax_enabled && adapter->ap_support_twt) {
@@ -4439,6 +4496,9 @@ int rsi_mgmt_pkt_recv(struct rsi_common *common, u8 *msg)
         return -1;
       if (!common->beacon_enabled)
         return -1;
+      if (common->acx_stop_beacon == true) {
+        return -EINVAL;
+      }
       rsi_dbg(MGMT_DEBUG_ZONE, "<==== Beacon Interrupt Received ====>\n");
 #ifndef CONFIG_STA_PLUS_AP
       rsi_send_beacon(common);
@@ -4559,6 +4619,27 @@ int rsi_bb_prog_data_to_app(struct rsi_hw *adapter)
   res = nlmsg_unicast(adapter->nl_sk, skb_out, adapter->wlan_nl_pid);
   if (res < 0) {
     rsi_dbg(ERR_ZONE, "%s: Failed to send stats to App\n", __func__);
+    return -1;
+  }
+  return 0;
+}
+int send_gaintable_status_to_app(struct rsi_hw *adapter)
+{
+  struct sk_buff *skb_out = { 0 };
+  struct nlmsghdr *nlh;
+  int res;
+  skb_out = nlmsg_new(2, 0);
+  if (!skb_out) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to allocate new skb\n", __func__);
+    return 0;
+  }
+
+  nlh = nlmsg_put(skb_out, adapter->wlan_nl_pid, 0, NLMSG_DONE, 2, 0);
+  /* NETLINK_CB(skb_out).dst_group = 0; */
+  memcpy(nlmsg_data(nlh), &adapter->gaintable_status, 2);
+  res = nlmsg_unicast(adapter->nl_sk, skb_out, adapter->wlan_nl_pid);
+  if (res < 0) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to send RSSI to App\n", __func__);
     return -1;
   }
   return 0;
@@ -4861,6 +4942,44 @@ int rsi_mgmt_send_bb_prog_frames(struct rsi_hw *adapter, unsigned short *bb_prog
   return 0;
 }
 
+int rsi_mgmt_soc_reg_ops_req(struct rsi_hw *adapter, unsigned short *bb_prog_vals, unsigned short type)
+{
+  struct rsi_bb_prog_params *bb_prog_req;
+  struct sk_buff *skb;
+  unsigned short frame_len;
+
+  skb = dev_alloc_skb(sizeof(struct rsi_bb_prog_params));
+  if (!skb)
+    return -1;
+
+  bb_prog_req = (struct rsi_bb_prog_params *)skb->data;
+  memset(skb->data, 0, sizeof(struct rsi_bb_prog_params));
+
+  rsi_dbg(INT_MGMT_ZONE, "====> Sending SOC REG OPS Request Packet <====\n");
+  frame_len = ((4) * 2); /* each 2 bytes */
+
+  /* Preparing the Frame descriptor */
+
+  bb_prog_req->desc_word[0] = cpu_to_le16(RSI_WIFI_MGMT_Q << 12);
+  bb_prog_req->desc_word[1] = cpu_to_le16(SOC_REG_OPS);
+  bb_prog_req->desc_word[3] = cpu_to_le16(bb_prog_vals[1]);
+  bb_prog_req->desc_word[4] = cpu_to_le16(bb_prog_vals[2]);
+  if (type == SOC_REG_WRITE) {
+    bb_prog_req->desc_word[5] = cpu_to_le16(bb_prog_vals[3]);
+    bb_prog_req->desc_word[6] = cpu_to_le16(bb_prog_vals[4]);
+    bb_prog_req->desc_word[7] = cpu_to_le16(0); //WRITE INDICATION
+  } else {
+    bb_prog_req->desc_word[7] = cpu_to_le16(1); //READ INDICATION
+  }
+
+  skb_put(skb, (frame_len + FRAME_DESC_SZ));
+  rsi_hex_dump(INT_MGMT_ZONE, "SOC_REG_OPS", skb->data, skb->len);
+
+  rsi_send_internal_mgmt_frame(adapter->priv, skb);
+
+  return 0;
+}
+
 int send_get_rssi_frame_to_fw(struct rsi_hw *adapter)
 {
   struct sk_buff *skb              = NULL;
@@ -4974,6 +5093,12 @@ int rsi_set_bb_rf_values(struct rsi_hw *adapter)
       }
     } else {
       printk("Invalid R/W type\n");
+    }
+
+  } else if (type == SOC_REG_WRITE || type == SOC_REG_READ) {
+    rsi_dbg(INFO_ZONE, "READ_BUF_VALUES : SOC_REG_READ/WRITE\n");
+    if (rsi_mgmt_soc_reg_ops_req(adapter, adapter->bb_rf_params.Data, type) != 0) {
+      return -1;
     }
   } else {
     rsi_dbg(INFO_ZONE, "Invalid R/W type\n");
@@ -5363,6 +5488,7 @@ int send_twt_session_details_to_lmac(struct rsi_hw *adapter,
   struct sk_buff *skb              = NULL;
   twt_session_config_t *twt_config = NULL;
   u64 wake_interval;
+  u32 rx_latency            = 0;
   struct rsi_common *common = adapter->priv;
   skb                       = dev_alloc_skb(sizeof(twt_session_config_t));
   if (!skb) {
@@ -5375,6 +5501,18 @@ int send_twt_session_details_to_lmac(struct rsi_hw *adapter,
   twt_config->frame_desc[0] = cpu_to_le16((sizeof(twt_session_config_t) - FRAME_DESC_SZ) | (RSI_WIFI_MGMT_Q << 12));
   twt_config->frame_desc[1] = cpu_to_le16(TWT_CONFIG);
   twt_config->frame_desc[2] = cpu_to_le16(twt_user_config->restrict_tx_outside_tsp << 8);
+  if (setup) {
+    wake_interval = twt_setup_resp->twt_element.wake_interval_mantisa;
+    wake_interval = wake_interval * (1 << twt_setup_resp->twt_element.req_type_twt_wi_exp);
+  }
+
+  if (adapter->twt_auto_config_enable && (setup == 1)) {
+    rx_latency = (u32)(div64_u64(((u64)twt_user_config->rx_latency - (div64_u64(wake_interval, 1024))), 100));
+    twt_config->frame_desc[4] = twt_user_config->beacon_wake_up_count_after_sp & 0xFF;
+    twt_config->frame_desc[3] = ((rx_latency & 0xFF) | (((rx_latency >> 8) & 0xFF) << 8));
+    twt_config->frame_desc[5] = (((rx_latency >> 16) & 0xFF) | (((rx_latency >> 24) & 0xFF) << 8));
+  }
+
   if (setup) {
     adapter->twt_session_active         = 1;
     adapter->twt_active_session_flow_id = twt_setup_resp->twt_element.req_type_twt_flow_id;
@@ -5396,8 +5534,6 @@ int send_twt_session_details_to_lmac(struct rsi_hw *adapter,
     } else {
       twt_config->twt_nom_wake_dur = (twt_setup_resp->twt_element.nom_min_wake_duration * 256);
     }
-    wake_interval                    = twt_setup_resp->twt_element.wake_interval_mantisa;
-    wake_interval                    = wake_interval * (1 << twt_setup_resp->twt_element.req_type_twt_wi_exp);
     twt_config->twt_wake_interval[0] = wake_interval & 0xFFFFFFFF;
     twt_config->twt_wake_interval[1] = (wake_interval >> 32) & 0xFFFFFFFF;
   } else {
@@ -5446,11 +5582,11 @@ int validate_unsupported_twt_resp_params(struct rsi_hw *adapter, twt_setup_frame
       && (twt_setup_resp->twt_element.req_type_twt_setup_command < 3)) {
     rsi_dbg(ERR_ZONE, "twt setup requests processing not supported\n");
     return 1;
+  } else if ((adapter->twt_auto_config_enable == 1) && (twt_setup_resp->twt_element.req_type_flow_type != 0)) {
+    rsi_dbg(ERR_ZONE, "only announced TWT setup is supported when auto config enabled\n");
+    return 1;
   } else if (twt_setup_resp->dialog_token != 1) {
     rsi_dbg(ERR_ZONE, "twt setup response dialogue token does not match\n");
-    return 1;
-  } else if (twt_setup_resp->twt_element.req_type_twt_flow_id != (adapter->rsi_twt_config.twt_flow_id)) {
-    rsi_dbg(ERR_ZONE, "twt setup response flow id does not match\n");
     return 1;
   } else if (twt_setup_resp->twt_element.control_negotiation_type) {
     rsi_dbg(ERR_ZONE, "only individual twt setup is supported \n");
@@ -5466,6 +5602,54 @@ int validate_unsupported_twt_resp_params(struct rsi_hw *adapter, twt_setup_frame
     return 1;
   }
   return 0;
+}
+
+static u8 does_twt_response_match_user_requirement(struct rsi_hw *adapter, twt_setup_frame_t *twt_setup_resp)
+{
+  twt_selection_t *user_config = &adapter->user_twt_auto_config;
+  rsi_twt_config_t *twt_config = &adapter->rsi_twt_config;
+  uint64_t resp_twt_wi, req_twt_wi, max_twt_wi, max_twt_wi_tol, total_resp_wake_duration_ms,
+    min_wake_duration_required_ms;
+  uint32_t resp_wake_duration, req_wake_duration, num_twt_service_periods;
+  if (twt_setup_resp->twt_element.req_type_flow_type != 0) {
+    return 0;
+  }
+  resp_twt_wi = ((uint64_t)twt_setup_resp->twt_element.wake_interval_mantisa
+                 * ((uint64_t)0x1 << twt_setup_resp->twt_element.req_type_twt_wi_exp))
+                >> 10;
+  resp_wake_duration = (((uint32_t)twt_setup_resp->twt_element.nom_min_wake_duration
+                         << (twt_setup_resp->twt_element.control_wake_duration_unit ? 10 : 8)))
+                       >> 10;
+  req_twt_wi        = ((uint64_t)twt_config->wake_int_mantissa * ((u64)0x1 << twt_config->wake_int_exp)) >> 10;
+  req_wake_duration = (((uint32_t)twt_config->wake_duration << (twt_config->twt_wake_duration_unit ? 10 : 8))) >> 10;
+  max_twt_wi = 0, max_twt_wi_tol = 0;
+  if (user_config->tx_latency != 0) {
+    max_twt_wi = MIN_OF_3(user_config->rx_latency, user_config->tx_latency, user_config->default_wake_interval_ms);
+  } else {
+    max_twt_wi = MIN_OF_2(user_config->rx_latency, user_config->default_wake_interval_ms);
+  }
+  max_twt_wi_tol = div64_u64((max_twt_wi * (u64)(100 + user_config->twt_tolerable_deviation)), 100);
+  // ensuring that AP given TWT Wake interval does not exceed max allowed TWT Wake interval beyond tolerated value.
+  if ((resp_twt_wi > max_twt_wi_tol) || (resp_wake_duration > (resp_twt_wi >> 1))) {
+    return 0;
+  } else {
+    //Calculating num of AP given TWT service periods possible within the Max allowed TWT Wake Interval
+    num_twt_service_periods = (uint32_t)(div64_u64(max_twt_wi, resp_twt_wi));
+    // If calculated number of service periods is zero, assign 1
+    num_twt_service_periods = num_twt_service_periods ? num_twt_service_periods : 1;
+    // Calculate total AP wake duration for all the number of TWT service periods
+    total_resp_wake_duration_ms = (uint64_t)num_twt_service_periods * (uint64_t)resp_wake_duration;
+    // min wake dur required by STA
+    min_wake_duration_required_ms = (uint64_t)req_wake_duration * (uint64_t)(div64_u64(max_twt_wi, req_twt_wi));
+    if ((total_resp_wake_duration_ms
+         < (div64_u64((min_wake_duration_required_ms * (u64)(100 - user_config->twt_tolerable_deviation)), 100)))
+        || (total_resp_wake_duration_ms
+            > (div64_u64((min_wake_duration_required_ms * (u64)(100 + user_config->twt_tolerable_deviation)), 100)))) {
+      //        indicate session setup failure if total AP wake duration is not within the tolerable limits.
+      return 0;
+    }
+  }
+  return 1;
 }
 
 int rsi_mgmt_process_twt_setup_resp(struct rsi_hw *adapter, struct sk_buff *skb)
@@ -5526,27 +5710,30 @@ int rsi_mgmt_process_twt_setup_resp(struct rsi_hw *adapter, struct sk_buff *skb)
           rsi_dbg(MGMT_DEBUG_ZONE,
                   "Received response = %x for TWT-SETUP-SUGGEST Frame \n",
                   twt_setup_frame->twt_element.req_type_twt_setup_command);
-          if ((twt_setup_frame->twt_element.nom_min_wake_duration
-               < ((user_twt_config->wake_duration > user_twt_config->wake_duration_tol)
-                    ? (user_twt_config->wake_duration - user_twt_config->wake_duration_tol)
-                    : 0))
-              || (twt_setup_frame->twt_element.nom_min_wake_duration
-                  > (user_twt_config->wake_duration + user_twt_config->wake_duration_tol))
-              || (twt_setup_frame->twt_element.req_type_twt_wi_exp
-                  < ((user_twt_config->wake_int_exp > user_twt_config->wake_int_exp_tol)
-                       ? (user_twt_config->wake_int_exp - user_twt_config->wake_int_exp_tol)
-                       : 0))
-              || (twt_setup_frame->twt_element.req_type_twt_wi_exp
-                  > (user_twt_config->wake_int_exp + user_twt_config->wake_int_exp_tol))
-              || (twt_setup_frame->twt_element.wake_interval_mantisa
-                  < ((user_twt_config->wake_int_mantissa > user_twt_config->wake_int_mantissa_tol)
-                       ? (user_twt_config->wake_int_mantissa - user_twt_config->wake_int_mantissa_tol)
-                       : 0))
-              || (twt_setup_frame->twt_element.wake_interval_mantisa
-                  > (user_twt_config->wake_int_mantissa + user_twt_config->wake_int_mantissa_tol))
-              || (twt_setup_frame->twt_element.req_type_trigger != (user_twt_config->triggered_twt & 1))
+          if ((twt_setup_frame->twt_element.req_type_trigger != (user_twt_config->triggered_twt & 1))
               || (twt_setup_frame->twt_element.req_type_implicit_twt != (user_twt_config->implicit_twt & 1))
-              || (twt_setup_frame->twt_element.req_type_flow_type != (user_twt_config->un_announced_twt & 1))) {
+              || (twt_setup_frame->twt_element.req_type_flow_type != (user_twt_config->un_announced_twt & 1))
+              || (((adapter->twt_auto_config_enable == 0)
+                   && ((twt_setup_frame->twt_element.nom_min_wake_duration
+                        < ((user_twt_config->wake_duration > user_twt_config->wake_duration_tol)
+                             ? (user_twt_config->wake_duration - user_twt_config->wake_duration_tol)
+                             : 0))
+                       || (twt_setup_frame->twt_element.nom_min_wake_duration
+                           > (user_twt_config->wake_duration + user_twt_config->wake_duration_tol))
+                       || (twt_setup_frame->twt_element.req_type_twt_wi_exp
+                           < ((user_twt_config->wake_int_exp > user_twt_config->wake_int_exp_tol)
+                                ? (user_twt_config->wake_int_exp - user_twt_config->wake_int_exp_tol)
+                                : 0))
+                       || (twt_setup_frame->twt_element.req_type_twt_wi_exp
+                           > (user_twt_config->wake_int_exp + user_twt_config->wake_int_exp_tol))
+                       || (twt_setup_frame->twt_element.wake_interval_mantisa
+                           < ((user_twt_config->wake_int_mantissa > user_twt_config->wake_int_mantissa_tol)
+                                ? (user_twt_config->wake_int_mantissa - user_twt_config->wake_int_mantissa_tol)
+                                : 0))
+                       || (twt_setup_frame->twt_element.wake_interval_mantisa
+                           > (user_twt_config->wake_int_mantissa + user_twt_config->wake_int_mantissa_tol))))
+                  || ((adapter->twt_auto_config_enable == 1)
+                      && (does_twt_response_match_user_requirement(adapter, twt_setup_frame) == 0)))) {
             rsi_dbg(ERR_ZONE, "AP TWT parameters not the in tolerance limit provided \n");
             adapter->twt_current_status = TWT_SETUP_RSP_OUTOF_TOL;
             if (twt_setup_frame->twt_element.req_type_twt_setup_command == TWT_SETUP_CMD_ACCEPT) {
@@ -5738,6 +5925,83 @@ int send_twt_information_frame(struct rsi_hw *adapter, wifi_reschedule_twt_confi
   return 0;
 out:
   dev_kfree_skb(skb);
+  return 0;
+}
+
+static u64 calculate_min_required_wake_dur(twt_selection_t *user_config, u32 max_allowed_wake_interval_ms)
+{
+  //minimum wake duration required within the max allowable wake interval to achieve expected tx throughput given the fixed device average throughput.
+  u64 min_wake_duration_required_ms =
+    div64_u64(((u64)user_config->expected_tx_throughput * (u64)max_allowed_wake_interval_ms),
+              (u64)user_config->device_avg_throughput);
+  min_wake_duration_required_ms *=
+    (100
+     + user_config
+         ->estimated_extra_wake_duration_percent); //Overestimating the time required by estimated_extra_wake_duration_percent
+  min_wake_duration_required_ms = (div64_u64(min_wake_duration_required_ms, 100));
+  //min_wake_duration_required_ms should be not be less than default minimum wake duration.
+  if (min_wake_duration_required_ms < user_config->default_min_wake_duration_ms) {
+    min_wake_duration_required_ms = user_config->default_min_wake_duration_ms;
+  }
+  return min_wake_duration_required_ms;
+}
+
+int use_case_based_twt_params_configuration(struct rsi_hw *adapter, twt_selection_t *user_config)
+{
+  rsi_twt_config_t *twt_config = &adapter->rsi_twt_config;
+  uint64_t wake_interval, min_wake_duration_required;
+  uint32_t max_allowed_wake_interval, num_twt_service_periods, wake_duration_per_sp, remainder;
+  wake_interval = min_wake_duration_required = 0;
+  max_allowed_wake_interval = num_twt_service_periods = wake_duration_per_sp = 0;
+  //Taking minimum of rx_latency/tx_latency/Default_wake_interval as Maximum allowable Wake interval.
+  if (user_config->tx_latency != 0) {
+    max_allowed_wake_interval =
+      MIN_OF_3(user_config->rx_latency, user_config->tx_latency, user_config->default_wake_interval_ms);
+  } else {
+    max_allowed_wake_interval = MIN_OF_2(user_config->rx_latency, user_config->default_wake_interval_ms);
+  }
+  min_wake_duration_required = calculate_min_required_wake_dur(user_config, max_allowed_wake_interval);
+  if (min_wake_duration_required > (max_allowed_wake_interval >> 1)) {
+    rsi_dbg(ERR_ZONE, "Invalid User Configuration\n");
+    return -1;
+  }
+  /*wake duration unit 1 is allowed only if ratio of expected_tx_throughput to device_avg_throughput greater than 1/4
+	  when it is the initial negotiation ie., when re-negotiating always use wake duration = 0 */
+  if ((user_config->device_avg_throughput > (user_config->expected_tx_throughput << 2))
+      || (twt_config->twt_wake_duration_unit == 1)) {
+    wake_duration_per_sp               = (min_wake_duration_required < 64) ? min_wake_duration_required : 63;
+    twt_config->twt_wake_duration_unit = 0;
+  } else {
+    wake_duration_per_sp               = (min_wake_duration_required < 256) ? min_wake_duration_required : 255;
+    twt_config->twt_wake_duration_unit = (min_wake_duration_required < 64) ? 0 : 1;
+  }
+  div_u64_rem(min_wake_duration_required, wake_duration_per_sp, &remainder);
+  num_twt_service_periods = div64_u64(min_wake_duration_required, wake_duration_per_sp) + ((remainder != 0) ? 1 : 0);
+  num_twt_service_periods = (num_twt_service_periods != 0) ? num_twt_service_periods : 1;
+  wake_duration_per_sp    = div64_u64((min_wake_duration_required << 10), num_twt_service_periods);
+  twt_config->wake_duration =
+    twt_config->twt_wake_duration_unit
+      ? (wake_duration_per_sp >> 10)
+      : (wake_duration_per_sp
+         >> 8); //divide by 256 to convert from 1uS units to 256uS units and 1024 to convert to 1024us
+  twt_config->wake_int_mantissa = (uint16_t)((uint64_t)max_allowed_wake_interval / (uint64_t)num_twt_service_periods);
+  twt_config->wake_int_exp      = 0xA;
+  twt_config->wake_int_exp_tol  = 0xFF;
+  twt_config->wake_int_mantissa_tol         = 0xFFFF;
+  twt_config->implicit_twt                  = 1;
+  twt_config->un_announced_twt              = 0; //only announced TWT for use case based TWT
+  twt_config->triggered_twt                 = 0;
+  twt_config->twt_channel                   = 0; //twt_channel must be zero
+  twt_config->twt_protection                = 0; //twt_protection must be zero
+  twt_config->restrict_tx_outside_tsp       = 1;
+  twt_config->twt_retry_limit               = 3;
+  twt_config->twt_retry_interval            = 10;
+  twt_config->req_type                      = 1; //0 - Request TWT; 1 - Suggest TWT; 2 - Demand TWT
+  twt_config->negotiation_type              = 0;
+  twt_config->twt_flow_id                   = 0;
+  twt_config->twt_enable                    = 1;
+  twt_config->rx_latency                    = user_config->rx_latency;
+  twt_config->beacon_wake_up_count_after_sp = user_config->beacon_wake_up_count_after_sp;
   return 0;
 }
 

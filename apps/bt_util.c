@@ -28,7 +28,9 @@ int main(int argc, char *argv[])
   int cmdNo = -1;
   struct bb_rf_param_bt_t bb_rf_params;
   int no_of_packets;
-  unsigned int bb_addr = 0, bb_val = 0;
+  unsigned int bb_addr = 0, bb_val = 0, len = 0;
+  unsigned char ii = 0;
+  struct nlmsghdr *nlh;
 
   memset(&bb_rf_params, 0, sizeof(bb_rf_params));
 
@@ -52,7 +54,7 @@ int main(int argc, char *argv[])
           return ONEBOX_STATUS_FAILURE;
         }
       } else {
-        printf("Usage: ./bt_util bt_e2e_stats < filename >\n");
+        usage();
       }
 
     } break;
@@ -62,7 +64,7 @@ int main(int argc, char *argv[])
           return ONEBOX_STATUS_FAILURE;
         }
       } else {
-        printf("Usage: ./bt_util bt_e2e_periodic_stats < filename > < duration >\n");
+        usage();
       }
     } break;
     case RSI_GET_BT_STATS: {
@@ -72,7 +74,7 @@ int main(int argc, char *argv[])
           return ONEBOX_STATUS_FAILURE;
         }
       } else {
-        printf("Usage: ./bt_util bt_stats < filename > <no_of_packets>\n");
+        usage();
       }
     } break;
 
@@ -87,13 +89,42 @@ int main(int argc, char *argv[])
         bb_rf_params.Data[0]      = bb_addr;
         bb_rf_params.Data[1]      = bb_val;
       } else {
-        printf("Usage: bb_write addr \n");
+        usage();
         return ONEBOX_STATUS_FAILURE;
       }
-      if (send_bb_write_frame_to_drv(bb_rf_params, sfd) < 0) {
+      if (send_bb_read_write_frame_to_drv(bb_rf_params, sfd) < 0) {
         printf("Unable to perform BB_WRITE\n");
       } else
         printf("SUCCESS Writing to BB: \n");
+      break;
+    case RSI_SET_BB_READ:
+      len = sizeof(bb_rf_params);
+      if (argc == 3) {
+        bb_addr = strtol(argv[2], NULL, 16);
+        ONEBOX_PRINT("BB addr: 0x%x \n", bb_addr);
+        bb_rf_params.value        = 0; //BB_READ_TYPE
+        bb_rf_params.no_of_values = 1;
+        bb_rf_params.soft_reset   = 0;
+        bb_rf_params.Data[0]      = bb_addr;
+      } else {
+        usage();
+        return ONEBOX_STATUS_FAILURE;
+      }
+      if (send_bb_read_write_frame_to_drv(bb_rf_params, sfd) < 0) {
+        printf("Unable to perform BB_READ\n");
+      } else
+        printf("SUCCESS in Reading BB: \n");
+      nlh = common_recv_mesg_wrapper(sfd, len);
+      if (nlh == NULL) {
+        printf("Error receving from bb\n");
+        break;
+      } else {
+        memcpy(&bb_rf_params, NLMSG_DATA(nlh), len);
+        for (ii = 0; ii < bb_rf_params.no_of_values; ii++) {
+          printf("BB_read value is 0x%x\n", bb_rf_params.Data[ii]);
+        }
+      }
+      free(nlh);
       break;
     default:
       break;
@@ -180,7 +211,7 @@ int send_bt_stat_frame_to_drv(struct bb_rf_param_bt_t bb_rf_params, int sfd)
   return ret;
 }
 
-int send_bb_write_frame_to_drv(struct bb_rf_param_bt_t bb_rf_params, int sfd)
+int send_bb_read_write_frame_to_drv(struct bb_rf_param_bt_t bb_rf_params, int sfd)
 {
   struct sockaddr_nl dest_addr;
   struct nlmsghdr *nlh        = NULL;
@@ -586,6 +617,8 @@ int get_bt_cmdnumber(char *command)
     return RSI_GET_BT_STATS;
   else if (!strcmp(command, "bb_write"))
     return RSI_SET_BB_WRITE;
+  else if (!strcmp(command, "bb_read"))
+    return RSI_SET_BB_READ;
   else
     usage();
   return ONEBOX_STATUS_SUCCESS;
@@ -601,5 +634,6 @@ void usage()
   ONEBOX_PRINT("Usage: ./bt_util bt_e2e_periodic_stats < filename > < duration >\n");
   ONEBOX_PRINT("Usage: ./bt_util bt_stats < filename > <no_of_packets>\n");
   ONEBOX_PRINT("Usage: ./bt_util bb_write  <addr> < value> \n");
+  ONEBOX_PRINT("Usage: ./bt_util bb_read  <addr>\n");
   return;
 }

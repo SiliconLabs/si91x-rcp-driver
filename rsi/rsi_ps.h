@@ -44,5 +44,6 @@ int rsi_handle_ps_confirm(struct rsi_hw *adapter, u8 *msg);
 void rsi_default_ps_params(struct rsi_hw *hw);
 int rsi_send_ps_request(struct rsi_hw *adapter, bool enable);
 void rsi_conf_uapsd(struct rsi_hw *adapter);
+void check_data_load(struct rsi_hw *adapter);
 
 #endif

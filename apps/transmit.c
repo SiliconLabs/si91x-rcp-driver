@@ -14,6 +14,13 @@
 #include <linux/wireless.h>
 #include "per_util.h"
 
+#define FCC        0x00
+#define ETSI       0x01
+#define TELEC      0x02
+#define WORLD      0x03
+#define WORLD_SAFE 0x05
+#define SRRC       0x06
+
 int is11brate(unsigned int rate)
 {
   switch (rate) {
@@ -93,10 +100,10 @@ int main(int argc, char *argv[])
 			tx_pwr += 32;
 		}
 #endif
-    if ((tx_pwr >= 0 && tx_pwr <= 30) || tx_pwr == 127) {
+    if (tx_pwr >= -15 && tx_pwr <= 127) {
       per_params.power = tx_pwr;
     } else {
-      printf("Invalid tx_pwr is given by user . Please enter tx_pwr between 0 to 30 (or) tx_pwr == 127 \n");
+      printf("Invalid tx_pwr is given by user . Please enter tx_pwr between -15 to 127 \n");
       exit(0);
     }
 
@@ -179,13 +186,53 @@ int main(int argc, char *argv[])
     if ((per_params.pkt_length - (per_params.aggr_count * PER_AGGR_LIMIT_PER_PKT)) > 0) {
       per_params.aggr_count++;
     }
-    if (per_params.aggr_count == 1) {
-      per_params.aggr_enable = 0;
-      per_params.aggr_count  = 0;
-    }
     per_params.no_of_pkts  = atoi(argv[10]);
     per_params.delay       = atoi(argv[11]);
     per_params.ctry_region = atoi(argv[12]);
+
+    if (per_params.ctry_region == 255) {
+      /*** Remove Me When Updated in Doc and More regions are added*/
+      per_params.ctry_region = 3; /* changing ctry_region to 3  from 127 to make sure same value in PER and End-to-End*/
+    } else if (((per_params.ctry_region < 0) || (per_params.ctry_region > 2)) && (per_params.ctry_region != 5)
+               && (per_params.ctry_region != 6)) {
+      printf("Invalid Country region \n");
+      printf("Valid country regions are : 0- FCC(US), 1- ETSI(Europe), 2-JP (japan), 5-WORLD_SAFE, 6-SRRC (china), "
+             "255-World\n");
+      return -1;
+    }
+
+    if (per_params.ctry_region == FCC) {
+      if ((chan_number < 1) || (chan_number > 11)) {
+        printf("Invalid Channel (%d) selected in  FCC Region\n", chan_number);
+        return -1;
+      }
+    } else if (per_params.ctry_region == ETSI) {
+      if ((chan_number < 1) || (chan_number > 13)) {
+        printf("Invalid Channel (%d) selected in  ETSI Region\n", chan_number);
+        return -1;
+      }
+    } else if (per_params.ctry_region == TELEC) {
+      if ((chan_number < 1) || (chan_number > 14)) {
+        printf("Invalid Channel (%d) selected in  JP Region\n", chan_number);
+        return -1;
+      }
+    } else if (per_params.ctry_region == WORLD_SAFE) {
+      if ((chan_number < 1) || (chan_number > 14)) {
+        printf("Invalid Channel (%d) selected in  WORLD_SAFE Region\n", chan_number);
+        return -1;
+      }
+    } else if (per_params.ctry_region == SRRC) {
+      if ((chan_number < 1) || (chan_number > 13)) {
+        printf("Invalid Channel (%d) selected in  SRRC Region\n", chan_number);
+        return -1;
+      }
+    } else if (per_params.ctry_region == WORLD) {
+      if ((chan_number < 1) || (chan_number > 13)) {
+        printf("Invalid Channel (%d) selected in  WORLD Region\n", chan_number);
+        return -1;
+      }
+    }
+
 #if 1
     if (tx_pktlen > 1536 && per_params.aggr_enable == 0) {
       printf("Invalid length,Give the length <= 1536 \n");
@@ -317,14 +364,6 @@ int main(int argc, char *argv[])
     printf("DELAY         : %d\n", per_params.delay);
     printf("CTRY_REGION : %d\n", per_params.ctry_region);
 
-    if (per_params.ctry_region == 255) {
-      /*** Remove Me When Updated in Doc and More regions are added*/
-      per_params.ctry_region = 3; /* changing ctry_region to 3  from 127 to make sure same value in PER and End-to-End*/
-    } else if ((per_params.ctry_region < 0) || (per_params.ctry_region > 2)) {
-      printf("Invalid Country region \n");
-      printf("Valid country regions are : 0- FCC(US), 1- ETSI(Europe), 2-JP (japan), 255-World\n");
-      return -1;
-    }
     //__9117_CODE_START
     memset(&per_params.heconf, 0, sizeof(per_params.heconf));
 

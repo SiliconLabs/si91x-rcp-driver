@@ -77,7 +77,7 @@ ONEBOX_STATUS rsi_process_packet(uint_8 *packet, uint_32 packet_len, struct sock
 {
 
   uint_16 type, ii, jj, i, j, flags;
-  uint_32 bb_addr, bb_len, soft_reset = 0, vals_per_reg, num_of_regs, no_of_addr;
+  uint_32 bb_addr, bb_len, soft_reset = 0, vals_per_reg, num_of_regs, no_of_addr = 0;
   uint_32 tx_count;
   uint_32 bb_val;
   uint_32 RCV_BUFFER[5];
@@ -311,9 +311,9 @@ int_32 bb_read(uint_32 bb_addr, uint_32 bb_len, uint_32 soft_rst)
 {
   int_32 count, cc = 1, m;
   uint_32 addr, ref, swap, len;
-  struct bb_rf_param_t bb_rf_params, bb_print_params;
-  count = bb_len;
-  addr  = bb_addr;
+  struct bb_rf_param_t bb_rf_params = {}, bb_print_params;
+  count                             = bb_len;
+  addr                              = bb_addr;
   printf(" Final read format for base band is 0x%x length is 0x%x :\n", addr, count);
   while (count) {
     ref                          = addr;
@@ -357,9 +357,9 @@ int_32 bb_read(uint_32 bb_addr, uint_32 bb_len, uint_32 soft_rst)
 int_32 bb_read_multiple(uint_32 bb_len, uint_32 soft_rst, uint_32 *BUFFER)
 {
   int_32 count, cc = 1, m;
-  uint_32 addr, i, len;
-  struct bb_rf_param_t bb_rf_params, bb_print_params;
-  count = bb_len;
+  uint_32 addr                      = 0, i, len;
+  struct bb_rf_param_t bb_rf_params = {}, bb_print_params;
+  count                             = bb_len;
 
   if (bb_len > 6) {
     printf("Maximum 6 Values allowed");
@@ -442,7 +442,7 @@ int_32 buffer_read(uint_32 *BUFFER, uint_32 no_of_addr, uint_32 soft_rst, uint_8
 {
   uint_16 val, i, ii, jj, j = 3, index = 0, k = 0, buf_len;
   uint_8 blocks, count, count1, write_block = 27;
-  struct bb_rf_param_t bb_rf_params, bb_rf_print;
+  struct bb_rf_param_t bb_rf_params = {}, bb_rf_print;
   uint_32 swap, len;
   val = (uint_16)no_of_addr;
   printf("Total no regs are = %d :\n", val);
@@ -556,7 +556,7 @@ int_32 buffer_write(uint_32 *BUFFER, uint_32 no_of_addr, uint_32 soft_rst, uint_
 {
   uint_16 val, i, ii, j = 3, index = 0, k = 0, buf_len;
   uint_8 blocks, count, count1, write_block = 27;
-  struct bb_rf_param_t bb_rf_params;
+  struct bb_rf_param_t bb_rf_params = {};
 
   val = (uint_16)no_of_addr;
   if (write_type == INDIRECT_ADDR) {
@@ -650,7 +650,7 @@ int_32 tx_packet(uint_32 *buf, uint_32 tx_cnt)
   int chan_number, cmd;
   int ii = 0, i;
   unsigned short tmp_rate;
-  per_params_t per_params;
+  per_params_t per_params  = {};
   unsigned char rate_flags = 0;
 
   if (tx_cnt == 1) {
@@ -1550,7 +1550,7 @@ int tcp_server(void)
   struct sockaddr_in server_addr;
   struct sockaddr_in client_addr;
   uint_8 packet[ONEBOX_MAX_PKT_LEN];
-  uint_8 packet1[ONEBOX_MAX_PKT_LEN];
+  uint_8 packet1[ONEBOX_MAX_PKT_LEN] = {};
   uint_32 read_len, client_len, i = 0, burst = 0, read_type;
   ONEBOX_STATUS status;
   uint_8 flag = 0;

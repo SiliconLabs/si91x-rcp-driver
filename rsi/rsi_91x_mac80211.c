@@ -1353,6 +1353,10 @@ static int rsi_channel_change(struct ieee80211_hw *hw)
 #else
     status = rsi_set_channel(adapter->priv, curchan);
 #endif
+  if (status) {
+    rsi_dbg(ERR_ZONE, "Failed to set the channel\n");
+    return -EINVAL;
+  }
 
   if (BSS_ASSOC) {
     if (common->hw_data_qs_blocked && (rsi_get_connected_channel(adapter) == channel)) {
@@ -1443,13 +1447,24 @@ static int rsi_mac80211_config(struct ieee80211_hw *hw, u32 changed)
 
   /* channel */
   if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
-    if (!BSS_ASSOC && (adapter->ps_state == PS_ENABLED))
+    if (!BSS_ASSOC && (adapter->ps_state == PS_ENABLED)) {
       rsi_disable_ps(adapter);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+      adapter->user_ps_en = 1;
+#endif
+    }
 #ifdef CONFIG_STA_PLUS_AP
     status = rsi_channel_change(hw, vif);
 #else
     status = rsi_channel_change(hw);
 #endif
+    if (status) {
+      rsi_dbg(ERR_ZONE, " This channel is not supported for ACx modules\n");
+      common->acx_stop_beacon = true;
+      mutex_unlock(&common->mutex);
+      return -EOPNOTSUPP;
+    }
+    common->acx_stop_beacon = false;
   }
 
   /* listen interval */
@@ -1473,7 +1488,11 @@ static int rsi_mac80211_config(struct ieee80211_hw *hw, u32 changed)
     unsigned long flags;
 
     spin_lock_irqsave(&adapter->ps_lock, flags);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    if (adapter->user_ps_en == 0) {
+#else
     if ((conf->flags & IEEE80211_CONF_PS) && (adapter->user_ps_en == 0)) {
+#endif
       rsi_enable_ps(adapter);
       adapter->user_ps_en = 1;
     } else if (adapter->ps_state == PS_ENABLED) {
@@ -1481,7 +1500,9 @@ static int rsi_mac80211_config(struct ieee80211_hw *hw, u32 changed)
       adapter->user_ps_en = 0;
     } else if (adapter->ps_state == PS_NONE) {
       rsi_dbg(INFO_ZONE, "Device already Power Save Disabled State\n");
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
       adapter->user_ps_en = 0;
+#endif
     }
     spin_unlock_irqrestore(&adapter->ps_lock, flags);
   }

@@ -18,6 +18,7 @@
 //__9117_CODE_END
 #include "per_util.h"
 #include <linux/netlink.h>
+#include <linux/errno.h>
 
 /******************************************************************************
  * main()
@@ -32,12 +33,12 @@ int main(int argc, char *argv[])
   unsigned char *pkt1;
   unsigned int pkt, i;
   unsigned int bb_addr = 0, bb_val = 0, len = 0;
-  struct bb_rf_param_t bb_rf_params;
-  struct bb_rf_param_t bb_rf_read;
+  struct bb_rf_param_t bb_rf_params = {};
+  struct bb_rf_param_t bb_rf_read   = {};
   w_9116_features_t w_9116_features;
   struct master_params_s master;
   struct efuse_content_t *efuse_content;
-  struct fltr_bcast bcast;
+  struct fltr_bcast bcast = {};
   int length;
   int multiple_bb_read = 0;
   //__9117_CODE_START
@@ -49,10 +50,12 @@ int main(int argc, char *argv[])
   rsi_twt_user_params twt_params;
   rsi_twt_status_resp *twt_resp = malloc(sizeof(rsi_twt_status_resp));
   wifi_reschedule_twt_config_t reschedule_twt_config;
+  twt_selection_t twt_sel_req;
 #endif
   unsigned short int bmiss_threshold_value, prev_bmiss_threshold;
   unsigned short int keep_alive_period;
   //__9117_CODE_END
+  short int gaintable_status;
   short int received_rssi;
   //__9117_CODE_START
   int diag_cmd          = 0;
@@ -102,7 +105,23 @@ int main(int argc, char *argv[])
   switch (cmdNo) {
     case UPDATE_WLAN_GAIN_TABLE: {
       ret = update_wlan_gain_table(argc, argv, ifName, sfd);
-    } break;
+      if (ret < 0) {
+        ONEBOX_PRINT("Error while issuing get_rssi ioctl\n");
+        ret = ONEBOX_STATUS_FAILURE;
+        break;
+      } else {
+        nlh = common_recv_mesg_wrapper(sfd, 2);
+        memcpy(&gaintable_status, (short int *)NLMSG_DATA(nlh), 2);
+      }
+      if (gaintable_status == -EINVAL) {
+        ONEBOX_PRINT(
+          "\n************** ERROR : Update WLAN Gain table not supported for ACx modules ************* \n\n");
+      } else {
+        ONEBOX_PRINT("\n************** Successfully completed programming gain tables ************* \n\n");
+      }
+      close(sfd);
+      break;
+    }
     case RSI_SET_BB_WRITE:
       if (argc > 3) {
         bb_addr = strtol(argv[3], NULL, 16);
@@ -202,6 +221,61 @@ int main(int argc, char *argv[])
         }
         free(nlh);
       }
+      break;
+    case SOC_REG_WRITE:
+      if (argc != 5) {
+        ONEBOX_PRINT("Usage: ./onebox_util rpine0 soc_reg_write $32bit_address $data\n");
+        close(sfd);
+        return ONEBOX_STATUS_FAILURE;
+      }
+      bb_rf_params.value        = SOC_REG_WRITE;
+      bb_rf_params.no_of_values = 4;
+      bb_addr                   = strtol(argv[3], NULL, 16);
+      bb_val                    = strtol(argv[4], NULL, 16);
+      bb_rf_params.Data[1]      = (uint_16)(bb_addr);
+      bb_rf_params.Data[2]      = (uint_16)(bb_addr >> 16);
+      bb_rf_params.Data[3]      = (uint_16)(bb_val);
+      bb_rf_params.Data[4]      = (uint_16)(bb_val >> 16);
+      ONEBOX_PRINT("SOC addr: 0x%x value 0x%x\n", bb_addr, bb_val);
+      ret = bb_read_write_wrapper(bb_rf_params, sfd);
+      if (ret < 0) {
+        printf("SOC_REG_WRITE Failed\n");
+      } else {
+        printf("SOC_REG_WRITE SUCCESS\n");
+      }
+      break;
+    case SOC_REG_READ:
+      len = sizeof(bb_rf_params);
+      if (argc != 4) {
+        ONEBOX_PRINT("Usage: ./onebox_util rpine0 soc_reg_read $32bit_address \n");
+        close(sfd);
+        return ONEBOX_STATUS_FAILURE;
+      }
+      bb_rf_params.value        = SOC_REG_READ;
+      bb_rf_params.no_of_values = 4;
+      bb_addr                   = strtol(argv[3], NULL, 16);
+      bb_rf_params.Data[1]      = (uint_16)(bb_addr);
+      bb_rf_params.Data[2]      = (uint_16)(bb_addr >> 16);
+      ONEBOX_PRINT("SOC addr: 0x%x \n", bb_addr);
+      ONEBOX_PRINT("SOC addr:Data[1] 0x%x Date[2] 0x%x\n", bb_rf_params.Data[1], bb_rf_params.Data[2]);
+
+      ret = bb_read_write_wrapper(bb_rf_params, sfd);
+      if (ret < 0) {
+        printf("SOC_REG_READ Failed\n");
+      }
+      nlh = common_recv_mesg_wrapper(sfd, len);
+      if (nlh == NULL) {
+        printf("SOC_REG_READ Receive failed\n");
+        break;
+      } else {
+        memcpy(&bb_rf_params, NLMSG_DATA(nlh), len);
+        for (ii = 0; ii < bb_rf_params.no_of_values; ii++) {
+          printf("SOC addr : 0x%x \n", bb_rf_params.Data[ii]);
+          if (!multiple_bb_read)
+            break;
+        }
+      }
+      free(nlh);
       break;
       //__9117_CODE_START
     case REAL_TIME_STATS:
@@ -586,6 +660,45 @@ int main(int argc, char *argv[])
                               sizeof(wifi_reschedule_twt_config_t));
 
       break;
+    case TWT_AUTO_CONFIG:
+      if (argc != 7) {
+        usage();
+        return ONEBOX_STATUS_FAILURE;
+      }
+      memset(&twt_sel_req, 0, sizeof(twt_selection_t));
+      twt_sel_req.twt_enable = atoi(argv[3]);
+
+      if ((twt_sel_req.twt_enable != 0) && twt_sel_req.twt_enable != 1)
+        return ONEBOX_STATUS_FAILURE;
+      twt_sel_req.rx_latency = atoi(argv[4]);
+      twt_sel_req.tx_latency = atoi(argv[5]);
+      if (twt_sel_req.twt_enable
+          && ((twt_sel_req.rx_latency > MAX_TX_AND_RX_LATENCY_LIMIT)
+              || (twt_sel_req.tx_latency > MAX_TX_AND_RX_LATENCY_LIMIT))) {
+        return ONEBOX_STATUS_FAILURE;
+      }
+      twt_sel_req.rx_latency        = (twt_sel_req.rx_latency == 0) ? 2000 : twt_sel_req.rx_latency;
+      twt_sel_req.avg_tx_throughput = atoi(argv[6]);
+      if ((twt_sel_req.rx_latency < 2000) || (twt_sel_req.avg_tx_throughput > (DEVICE_AVG_THROUGHPUT / 2))) {
+        return ONEBOX_STATUS_FAILURE;
+      }
+      if ((twt_sel_req.tx_latency < 200) && (twt_sel_req.tx_latency != 0)) {
+        return ONEBOX_STATUS_FAILURE;
+      }
+      if (twt_sel_req.twt_enable == 1) {
+        twt_sel_req.device_avg_throughput                 = DEVICE_AVG_THROUGHPUT;
+        twt_sel_req.estimated_extra_wake_duration_percent = ESTIMATE_EXTRA_WAKE_DURATION_PERCENT;
+        twt_sel_req.twt_tolerable_deviation               = TWT_TOLERABLE_DEVIATION;
+        twt_sel_req.default_wake_interval_ms              = TWT_DEFAULT_WAKE_INTERVAL_MS;
+        twt_sel_req.default_minimum_wake_duration_ms      = TWT_DEFAULT_WAKE_DURATION_MS;
+        twt_sel_req.beacon_wake_up_count_after_sp         = MAX_BEACON_WAKE_UP_AFTER_SP;
+      } else {
+        twt_sel_req.avg_tx_throughput = 0;
+        twt_sel_req.rx_latency        = 0;
+        twt_sel_req.tx_latency        = 0;
+      }
+      prepare_and_send_nl_cmd(sfd, TWT_AUTO_CONFIG, 0, WLAN_PACKET, (void *)&twt_sel_req, sizeof(twt_selection_t));
+      break;
 #endif
     case SET_HW_BMISS_THRESHOLD:
       if (argc != 4) {
@@ -807,6 +920,10 @@ int getcmdnumber(char *command, char *ifName)
     return RSI_MULTIPLE_BB_READ;
   } else if (!strcmp(command, "bb_read") && !strncmp(ifName, "rpine", 5)) {
     return RSI_SET_BB_READ;
+  } else if (!strcmp(command, "soc_reg_read") && !strncmp(ifName, "rpine", 5)) {
+    return SOC_REG_READ;
+  } else if (!strcmp(command, "soc_reg_write") && !strncmp(ifName, "rpine", 5)) {
+    return SOC_REG_WRITE;
     //__9117_CODE_START
   } else if (!strcmp(command, "real_time_stats") && !strncmp(ifName, "rpine", 5)) {
     return REAL_TIME_STATS;
@@ -824,6 +941,8 @@ int getcmdnumber(char *command, char *ifName)
     return TWT_STATUS;
   } else if (!strcmp(command, "reschedule_twt") && !strncmp(ifName, "rpine0", 5)) {
     return RESCHEDULE_TWT;
+  } else if (!strcmp(command, "twt_auto_config") && !strncmp(ifName, "rpine0", 5)) {
+    return TWT_AUTO_CONFIG;
   }
 #endif
   else if (!strcmp(command, "hw_bmiss_threshold") && !strncmp(ifName, "rpine0", 5)) {
@@ -862,6 +981,7 @@ void usage()
                "twt_retry_limit twt_retry_interval twt_req_type twt_enable wake_duration_unit\n");
   ONEBOX_PRINT("Usage:./onebox_util rpine0 twt_status\n");
   ONEBOX_PRINT("Usage:./onebox_util rpine0 reschedule_twt twt_flow_id twt_action duration\n");
+  ONEBOX_PRINT("Usage:./onebox_util rpine0 twt_auto_config twt_enable rx_latency  tx_latency avg_tx_throughput\n");
 #endif
   ONEBOX_PRINT("Usage:./onebox_util rpine0 hw_bmiss_threshold value\n");
   ONEBOX_PRINT("Usage:./onebox_util rpine0 keep_alive value\n");
@@ -876,6 +996,8 @@ void usage()
                "dpd SIFSTransmitenable pwrsave_options\n");
   ONEBOX_PRINT("Usage: onebox_util base_interface master_read $32bit_address $no_bytes_to_read )\n");
   ONEBOX_PRINT("Usage: onebox_util base_interface master_write $32bit_address $no_bytes_to_write $data)\n");
+  ONEBOX_PRINT("Usage: ./onebox_util rpine0 soc_reg_write $32bit_address $data\n");
+  ONEBOX_PRINT("Usage: ./onebox_util rpine0 soc_reg_read $32bit_address\n");
   //__9117_CODE_END
   return;
 }

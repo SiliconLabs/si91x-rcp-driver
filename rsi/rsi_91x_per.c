@@ -36,7 +36,13 @@ int rsi_stats_frame(struct rsi_hw *adapter)
   mgmt_frame->desc_word[1] = cpu_to_le16(STATS_REQUEST);
   mgmt_frame->desc_word[3] = cpu_to_le16(adapter->ch_util_start_flag);
   mgmt_frame->desc_word[4] = cpu_to_le16(adapter->stats_interval);
-  mgmt_frame->desc_word[5] = cpu_to_le16(adapter->false_cca_rssi_threshold);
+
+  //__9117_CODE_START
+  if (adapter->device_model >= RSI_DEV_9117)
+    mgmt_frame->desc_word[5] = cpu_to_le16(adapter->false_cca_rssi_threshold | PER_RATE_STATS_ENABLE_917);
+  else
+    //__9117_CODE_END
+    mgmt_frame->desc_word[5] = cpu_to_le16(adapter->false_cca_rssi_threshold | PER_RATE_STATS_ENABLE);
 
   /* Indication to PPE to request statistics */
   mgmt_frame->desc_word[0] = cpu_to_le16(RSI_WIFI_MGMT_Q << 12);

@@ -326,10 +326,6 @@ file_failure:
   ret = ONEBOX_STATUS_FAILURE;
 end_of_file:
   fclose(fp);
-  if (ret == ONEBOX_STATUS_SUCCESS) {
-    close(sfd);
-    printf("\n**************Successfully completed programming %d gain tables ************* \n\n", (no_of_structs - 1));
-  }
 #ifdef DEBUG
   printf("return %d\n", ret);
 #endif

@@ -130,4 +130,10 @@ int zigb_genl_recv(struct sk_buff *skb, struct genl_info *info);
 int rsi_zigb_recv_pkt(void *priv, u8 *pkt);
 int rsi_zigb_send_pkt(struct rsi_common *common, struct sk_buff *skb);
 int zigb_genl_send(struct genl_cb *gcb, struct sk_buff *skb);
+void rsi_zb_dbg(u32 zone, const char *fmt, ...);
+void unregister_dev(struct net_device *dev);
+int rsi_zigb_open(struct net_device *dev);
+int rsi_zigb_close(struct net_device *dev);
+int rsi_zigb_xmit(struct sk_buff *skb, struct net_device *dev);
+int rsi_zigb_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd);
 #endif

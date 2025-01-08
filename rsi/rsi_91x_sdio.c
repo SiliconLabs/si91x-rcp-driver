@@ -1147,6 +1147,7 @@ static int rsi_probe(struct sdio_func *pfunction, const struct sdio_device_id *i
     adapter->num_debugfs_entries = MAX_DEBUGFS_ENTRIES;
 #endif
 
+#ifndef NO_FIRMWARE_LOAD_SUPPORT
   if (rsi_hal_device_init(adapter)) {
     rsi_dbg(ERR_ZONE, "%s: Failed in device init\n", __func__);
     goto fail_dev_init;
@@ -1158,18 +1159,26 @@ static int rsi_probe(struct sdio_func *pfunction, const struct sdio_device_id *i
     goto fail_dev_init;
   }
   rsi_dbg(INIT_ZONE, "%s: Setting ms word to 0x41050000\n", __func__);
+#endif
 
   adapter->priv->hibernate_resume = false;
+#ifdef NO_FIRMWARE_LOAD_SUPPORT
+  adapter->common_hal_fsm      = COMMON_HAL_TX_ACCESS;
+  common->common_hal_tx_access = true;
+#endif
+
 #if defined(CONFIG_ARCH_HAVE_CUSTOM_GPIO_H)
   if (common->ulp_ps_handshake_mode == GPIO_HAND_SHAKE)
     gpio_init(common);
 #endif
   return 0;
 
+#ifndef NO_FIRMWARE_LOAD_SUPPORT
 fail_dev_init:
   sdio_claim_host(pfunction);
   sdio_release_irq(pfunction);
   sdio_release_host(pfunction);
+#endif
 fail_claim_irq:
   rsi_kill_thread(&sdev->rx_thread);
   kfree(sdev->temp_rcv_buf);
