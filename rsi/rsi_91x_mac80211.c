@@ -183,8 +183,8 @@ const u16 er_su_rates[9] = { _11AX_MCS0, _11AX_MCS0, _11AX_MCS0, _11AX_MCS0, _11
 //__9117_CODE_END
 static const u32 rsi_max_ap_stas[16] = {
   32, /* 1 - Wi-Fi alone */
-  0,  /* 2 */
-  0,  /* 3 */
+  32, /* 2 - Wi-Fi AP alone*/
+  32, /* 3 - Wi-Fi Concurrent Mode*/
   0,  /* 4 - BT EDR alone */
   4,  /* 5 - STA + BT EDR */
   32, /* 6 - AP + BT EDR */
@@ -2057,6 +2057,9 @@ static int rsi_mac80211_set_key(struct ieee80211_hw *hw,
   struct vif_priv *vif_info     = (struct vif_priv *)vif->drv_priv;
   int status;
 
+  if (key->keyidx == RSI_AES_CMAC)
+    return 0;
+
   mutex_lock(&common->mutex);
   switch (cmd) {
     case SET_KEY:
@@ -2462,6 +2465,14 @@ static int rsi_mac80211_set_rate_mask(struct ieee80211_hw *hw,
       return -EINVAL;
     }
 
+    if (strstr(adapter->country, "JP") && common->mac80211_cur_channel == 14) {
+      if (rate > RSI_RATE_2) {
+        rsi_dbg(ERR_ZONE, "Invalid data rate selected for JP region in Channel 14\n");
+        mutex_unlock(&common->mutex);
+        return 0;
+      }
+    }
+
     common->fixed_rate_en = 1;
     common->fixed_rate    = rate;
   }
@@ -2640,7 +2651,6 @@ int rsi_validate_pn(struct rsi_hw *adapter, struct ieee80211_hdr *hdr)
       rsi_dbg(ERR_ZONE,
               "Packet Dropped as Key ID not matched with both "
               "current and previous Key ID\n");
-      return -1;
     }
   }
 
@@ -2713,13 +2723,26 @@ static int rsi_fill_rx_status(struct ieee80211_hw *hw,
           dev_kfree_skb(skb);
           return -EINVAL;
         }
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 271))
+        if (ieee80211_is_frag(hdr)) {
+#else
+        if (ieee80211_has_morefrags(hdr->frame_control) || (hdr->seq_ctrl & cpu_to_le16(IEEE80211_SCTL_FRAG))) {
+#endif
+          rsi_dbg(DATA_TX_ZONE, "Frag Packet received\n");
+          rsi_hex_dump(DATA_TX_ZONE, "FRAG Packet ", skb->data, skb->len);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 132))
+          rxs->flag |= RX_FLAG_MIC_STRIPPED;
+#endif
+          goto FRAG;
+        }
         memmove(skb->data + IEEE80211_CCMP_HDR_LEN, skb->data, hdrlen);
         skb_pull(skb, IEEE80211_CCMP_HDR_LEN);
         rxs->flag |= RX_FLAG_MMIC_STRIPPED;
       }
     }
-    rxs->flag |= RX_FLAG_DECRYPTED;
     rxs->flag |= RX_FLAG_IV_STRIPPED;
+FRAG:
+    rxs->flag |= RX_FLAG_DECRYPTED;
   }
 
   if (!vif) {
@@ -2758,6 +2781,27 @@ void rsi_indicate_pkt_to_os(struct rsi_common *common, struct sk_buff *skb)
     return;
   }
 
+  if (adapter->amsdu_bit == 1) {
+    memcpy(common->last_mac_hdr, skb->data, 26);
+  }
+
+  if (adapter->amsdu_bit == 2) {
+    if (skb_headroom(skb) < 26) {
+      rsi_dbg(DATA_TX_ZONE, "Failed to reserve space in skb\n");
+    }
+    skb_push(skb, 26); // This will shift the data and add 26 bytes at the front
+    memcpy(skb->data, common->last_mac_hdr, 26);
+  }
+  if (adapter->amsdu_bit == 3) {
+    if (skb_headroom(skb) < 26) {
+      rsi_dbg(DATA_TX_ZONE, "Failed to reserve space in skb\n");
+    }
+    skb_push(skb, 26); // This will shift the data and add 26 bytes at the front
+    memcpy(skb->data, common->last_mac_hdr, 26);
+    memset(common->last_mac_hdr, 0, 26);
+    adapter->amsdu_bit = 0;
+  }
+
   /* filling in the ieee80211_rx_status flags */
   if (rsi_fill_rx_status(hw, skb, common, rx_status))
     return;
@@ -2769,6 +2813,7 @@ void rsi_indicate_pkt_to_os(struct rsi_common *common, struct sk_buff *skb)
       return;
     }
   }
+
   rsi_dbg(MGMT_RX_ZONE, "RX Packet Type: %s\n", dot11_pkt_type(skb->data[0]));
   rsi_hex_dump(DATA_RX_ZONE, "802.11 RX packet", skb->data, skb->len);
   ieee80211_rx_irqsafe(hw, skb);

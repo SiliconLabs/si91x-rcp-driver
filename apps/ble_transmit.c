@@ -219,8 +219,15 @@ int main(int argc, char *argv[])
     if (ble_per_transmit_wrapper(bb_rf_params, BT_PER, sfd) < 0) {
       printf("Unable to perform bt_transmit\n");
       return ONEBOX_STATUS_FAILURE;
+    } else {
+      nlh = common_recv_mesg_wrapper(sfd, sizeof(status));
+      memcpy(&status, NLMSG_DATA(nlh), sizeof(status));
+      if (status == 0) {
+        printf("======== SUCCESS ============\n");
+      } else {
+        printf("======== FAILED ============\n");
+      }
     }
-    printf("======== SUCCESS ============\n");
   } else if (argc == STOP_OF_ARGS) {
     if (!(strcmp(argv[1], "0"))) {
       ble_per_params.enable = 0;

@@ -216,6 +216,12 @@ int main(int argc, char *argv[])
         printf("Invalid Channel (%d) selected in  JP Region\n", chan_number);
         return -1;
       }
+      if (chan_number == 14) {
+        if (strcmp(tmp_rate, "1") && strcmp(tmp_rate, "2")) {
+          printf("Invalid data rate selected for JP Region in Channel %d\n", chan_number);
+          return -1;
+        }
+      }
     } else if (per_params.ctry_region == WORLD_SAFE) {
       if ((chan_number < 1) || (chan_number > 14)) {
         printf("Invalid Channel (%d) selected in  WORLD_SAFE Region\n", chan_number);

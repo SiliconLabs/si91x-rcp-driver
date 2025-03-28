@@ -418,6 +418,59 @@ int rsi_process_rx_bt_ble_gain_table_update(struct rsi_common *common, unsigned 
   return 0;
 }
 
+int rsi_process_rx_ble_country_region_update(struct rsi_common *common, unsigned short status)
+{
+  struct sk_buff *skb_out = NULL;
+  struct nlmsghdr *nlh    = NULL;
+  int msg_size, res;
+  struct rsi_hw *adapter = common->priv;
+  msg_size               = sizeof(status);
+  skb_out                = nlmsg_new(msg_size, 0);
+  if (!skb_out) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to allocate skb\n", __func__);
+    return -1;
+  }
+  nlh = nlmsg_put(skb_out, adapter->bt_nl_pid, 0, NLMSG_DONE, msg_size, 0);
+  memcpy(nlmsg_data(nlh), (unsigned char *)&status, msg_size);
+  rsi_dbg(ERR_ZONE, "<==== Sending BLE COUNTRY REGION STATUS to Application ====>\n");
+  res = nlmsg_unicast(adapter->nl_sk, skb_out, adapter->bt_nl_pid);
+  if (res < 0) {
+    rsi_dbg(ERR_ZONE, "%s: Failed to send BLE COUNTRY REGION STATUS to Application\n", __func__);
+    return -1;
+  }
+  return 0;
+}
+
+int rsi_ble_country_region_update(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len, u16 cmd)
+{
+  struct rsi_common *common = adapter->priv;
+  struct sk_buff *skb;
+  struct rsi_hci_adapter *h_adapter = (struct rsi_hci_adapter *)common->hci_adapter;
+
+  if (h_adapter->priv->bt_fsm_state != BT_DEVICE_READY) {
+    rsi_dbg(ERR_ZONE, "BT Device not ready\n");
+    return -ENODEV;
+  }
+  rsi_dbg(MGMT_TX_ZONE, "%s: <==== Sending BLE_COUNTRY_REGION_UPDATE frame ====>\n", __func__);
+
+  skb = dev_alloc_skb(payload_len);
+  if (!skb)
+    return -ENOMEM;
+
+  memset(skb->data, 0, payload_len);
+  memcpy(skb->data, nlmsg_data(nlh) + FRAME_DESC_SZ, payload_len);
+  skb_put(skb, payload_len);
+  bt_cb(skb)->pkt_type = cpu_to_le16(cmd);
+  rsi_hex_dump(MGMT_TX_ZONE, "BLE COUNTRY REGION UPDATE", skb->data, skb->len);
+
+#ifdef CONFIG_RSI_COEX_MODE
+  rsi_coex_send_pkt(common, skb, BT_Q);
+#else
+  rsi_send_bt_pkt(common, skb);
+#endif
+  return 0;
+}
+
 int rsi_hci_recv_pkt(struct rsi_common *common, u8 *pkt)
 {
   struct rsi_hci_adapter *h_adapter = (struct rsi_hci_adapter *)common->hci_adapter;
@@ -438,6 +491,7 @@ int rsi_hci_recv_pkt(struct rsi_common *common, u8 *pkt)
     }
     if (rsi_send_bt_reg_params(common)) {
       rsi_dbg(ERR_ZONE, "%s: Failed to write BT reg params\n", __func__);
+      return 0;
     }
     rsi_dbg(INFO_ZONE, "Attaching HCI module\n");
 
@@ -492,6 +546,13 @@ int rsi_hci_recv_pkt(struct rsi_common *common, u8 *pkt)
         rsi_hex_dump(MGMT_RX_ZONE, "BT/BLE GAIN TABLE UPDATE confirm From LMAC", (char *)&status, sizeof(status));
         rsi_process_rx_bt_ble_gain_table_update(common, status);
         return 0;
+      case BLE_COUNTRY_REGION_UPDATE:
+        rsi_dbg(MGMT_RX_ZONE, " Received BT/BLE COUNTRY REGION UPDATE confirm from LMAC\n");
+        memcpy((char *)&status, pkt + FRAME_DESC_SZ, sizeof(status));
+        rsi_hex_dump(ERR_ZONE, "BT/BLE COUNTRY REGION UPDATE confirm From LMAC", (char *)&status, sizeof(status));
+        rsi_dbg(MGMT_RX_ZONE, " Received BT/BLE COUNTRY REGION UPDATE confirm from LMAC   %d \n", status);
+        rsi_process_rx_ble_country_region_update(common, status);
+        return 0;
       default:
         break;
     }
@@ -542,6 +603,10 @@ int rsi_bt_transmit_cmd(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payloa
   skb_put(skb, payload_len);
   bt_cb(skb)->pkt_type = cpu_to_le16(cmd);
   rsi_hex_dump(MGMT_TX_ZONE, "BT PER", skb->data, skb->len);
+  if ((common->is_915) && (skb->data[18] == 3)) {
+    rsi_dbg(ERR_ZONE, "%s : Unsupported rf_chain : %d for Si915 module \n", __func__, skb->data[18]);
+    return -1;
+  }
 
 #ifdef CONFIG_RSI_COEX_MODE
   rsi_coex_send_pkt(common, skb, BT_Q);

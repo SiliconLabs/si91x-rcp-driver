@@ -430,6 +430,10 @@ static char *opmode_str(int oper_mode)
   switch (oper_mode) {
     case DEV_OPMODE_WIFI_ALONE:
       return "Wi-Fi alone";
+    case DEV_OPMODE_AP_ALONE:
+      return "Wi-Fi AP alone";
+    case DEV_OPMODE_CONCURRENT_MODE:
+      return "Wi-Fi Concurrent Mode";
     case DEV_OPMODE_BT_ALONE:
       return "BT EDR alone";
     case DEV_OPMODE_BT_LE_ALONE:
@@ -569,7 +573,9 @@ int rsi_read_pkt(struct rsi_common *common, u8 *rx_pkt, s32 rcv_pkt_len)
 {
   u8 *frame_desc = NULL, extended_desc = 0;
   u32 index = 0, length = 0, queueno = 0;
-  u16 actual_length      = 0, offset;
+  u16 actual_length = 0, offset;
+  u32 value         = 0;
+  u32 i;
   struct sk_buff *skb    = NULL;
   struct rsi_hw *adapter = common->priv;
 #if defined(CONFIG_RSI_COEX_MODE) && defined(CONFIG_RSI_ZIGB)
@@ -615,6 +621,11 @@ int rsi_read_pkt(struct rsi_common *common, u8 *rx_pkt, s32 rcv_pkt_len)
         break;
       case RSI_WIFI_DATA_Q:
         rsi_hex_dump(DATA_RX_ZONE, "RX Data pkt", frame_desc + offset, FRAME_DESC_SZ + length);
+        value = 0;
+        for (i = 0; i < 4; i++) {
+          value |= frame_desc[offset + 28 + i] << (i * 8);
+        }
+
         skb = rsi_prepare_skb(common, (frame_desc + offset), length, extended_desc);
         if (!skb)
           goto fail;
@@ -622,6 +633,15 @@ int rsi_read_pkt(struct rsi_common *common, u8 *rx_pkt, s32 rcv_pkt_len)
         if (vif && (adapter->user_ps_en) && (adapter->ps_info.monitor_interval || common->disable_ps_from_lmac)
             && (vif->type == NL80211_IFTYPE_STATION)) {
           check_traffic_pwr_save(adapter);
+        }
+        if (value & BIT(25)) {
+          if (value & BIT(22)) {
+            adapter->amsdu_bit = 1;
+          } else if (value & BIT(23)) {
+            adapter->amsdu_bit = 3;
+          } else {
+            adapter->amsdu_bit = 2;
+          }
         }
         rsi_indicate_pkt_to_os(common, skb);
         break;
@@ -862,7 +882,17 @@ struct rsi_hw *rsi_91x_init(void)
   init_waitqueue_head(&common->techs[WLAN_ID].tx_access_event);
   init_waitqueue_head(&common->techs[COMMON_ID].tx_access_event);
   rsi_init_event(&common->rsi_bt_per_event);
-
+#ifndef CONFIG_STA_PLUS_AP
+  common->host_txq_maxlen[BK_Q] = BK_DATA_QUEUE_WATER_MARK;
+  common->host_txq_maxlen[BE_Q] = BE_DATA_QUEUE_WATER_MARK;
+  common->host_txq_maxlen[VI_Q] = VI_DATA_QUEUE_WATER_MARK;
+  common->host_txq_maxlen[VO_Q] = VO_DATA_QUEUE_WATER_MARK;
+#else
+  common->host_txq_maxlen[BK_Q_AP] = BK_DATA_QUEUE_WATER_MARK;
+  common->host_txq_maxlen[BE_Q_AP] = BE_DATA_QUEUE_WATER_MARK;
+  common->host_txq_maxlen[VI_Q_AP] = VI_DATA_QUEUE_WATER_MARK;
+  common->host_txq_maxlen[VO_Q_AP] = VO_DATA_QUEUE_WATER_MARK;
+#endif
 #ifdef CONFIG_RSI_COEX_MODE
   init_waitqueue_head(&common->techs[BT_ZB_ID].tx_access_event);
 #endif
@@ -881,7 +911,7 @@ struct rsi_hw *rsi_91x_init(void)
   common->dev_oper_mode[0] = dev_oper_mode_count;
   memcpy(&common->dev_oper_mode[1], &dev_oper_mode, 5 * sizeof(u16));
 #else
-  common->dev_oper_mode = dev_oper_mode;
+  common->dev_oper_mode            = dev_oper_mode;
 #endif
   common->lp_ps_handshake_mode  = lp_handshake_mode;
   common->ulp_ps_handshake_mode = ulp_handshake_mode;

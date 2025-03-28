@@ -17,7 +17,7 @@ struct rsi_hw;
 
 #include "rsi_ps.h"
 
-#define DRV_VER "SiWT917.2.13.0.4"
+#define DRV_VER "SiWT917.2.14.0.5"
 #define ERR_ZONE        BIT(0)  /* Error Msgs		*/
 #define INFO_ZONE       BIT(1)  /* Generic Debug Msgs	*/
 #define INIT_ZONE       BIT(2)  /* Driver Init Msgs	*/
@@ -80,11 +80,12 @@ void rsi_hex_dump(u32 zone, char *msg_str, const u8 *msg, u32 len);
 
 #define DATA_QUEUE_WATER_MARK       400
 #define MIN_DATA_QUEUE_WATER_MARK   300
-#define BK_DATA_QUEUE_WATER_MARK    600
-#define BE_DATA_QUEUE_WATER_MARK    3200
-#define VI_DATA_QUEUE_WATER_MARK    3900
-#define VO_DATA_QUEUE_WATER_MARK    4500
+#define BK_DATA_QUEUE_WATER_MARK    20
+#define BE_DATA_QUEUE_WATER_MARK    140
+#define VI_DATA_QUEUE_WATER_MARK    300
+#define VO_DATA_QUEUE_WATER_MARK    600
 #define MULTICAST_WATER_MARK        200
+#define NW_QUEUE_STOP_OFFSET        3
 #define MAC_80211_HDR_FRAME_CONTROL 0
 #define WME_NUM_AC                  4
 #ifndef CONFIG_STA_PLUS_AP
@@ -464,7 +465,7 @@ struct rsi_common {
   struct rsi_thread sdio_intr_poll_thread;
 #endif
   struct sk_buff_head tx_queue[NUM_EDCA_QUEUES + 2];
-
+  u16 host_txq_maxlen[MAX_HW_QUEUES];
   /* Mutex declaration */
   struct mutex mutex;
   struct mutex pslock;
@@ -620,6 +621,7 @@ struct rsi_common {
   struct ieee80211_vif *scan_vif;
   bool scan_in_prog;
   bool acx_module;
+  bool is_915;
   bool acx_stop_beacon;
   struct workqueue_struct *scan_workqueue;
   struct work_struct scan_work;
@@ -732,6 +734,7 @@ struct rsi_common {
   bool default_deep_sleep_enable;
   u8 pta_config;
   bool enable_encap_offload;
+  u8 last_mac_hdr[26];
 };
 
 enum host_intf { RSI_HOST_INTF_SDIO = 0, RSI_HOST_INTF_USB };
@@ -1491,6 +1494,8 @@ struct rsi_hw {
 
   //__9117_CODE_END
   struct master_params_s master_ops;
+  u16 twt_ps_disable;
+  int amsdu_bit;
 };
 
 struct acs_stats_s {
@@ -1546,12 +1551,15 @@ int rsi_process_rx_stats(struct rsi_hw *adapter);
 int rsi_copy_efuse_content(struct rsi_hw *adapter);
 int rsi_process_efuse_content(struct rsi_common *common, struct efuse_map_s);
 #if defined(CONFIG_RSI_COEX_MODE) || defined(CONFIG_RSI_BT_ALONE)
-#define BT_E2E_STAT       0x13
-#define BT_BLE_GAIN_TABLE 0x06
+#define BT_E2E_STAT               0x13
+#define BT_BLE_GAIN_TABLE         0x06
+#define BLE_COUNTRY_REGION_UPDATE 0x27
+#define BLE_VENDOR_PKT            0xFF
 int rsi_bt_e2e_stats(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len, u16 cmd);
 int rsi_bt_ble_update_gain_table(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len, u16 cmd);
 int rsi_bt_transmit_cmd(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len, u16 cmd);
 int rsi_bt_per_stats(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len, u16 cmd);
+int rsi_ble_country_region_update(struct rsi_hw *adapter, struct nlmsghdr *nlh, int payload_len, u16 cmd);
 #endif
 #define UPDATE_WLAN_GAIN_TABLE 78
 #define FILTER_BCAST           79

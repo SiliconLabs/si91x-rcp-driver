@@ -1020,6 +1020,11 @@ static int rsi_mgmt_pkt_to_core(struct rsi_common *common, u8 *msg, s32 msg_len)
         rsi_hex_dump(MGMT_DEBUG_ZONE, "Action Frame", skb->data, skb->len);
         if (adapter->twt_session_in_progress) {
           rsi_mgmt_process_twt_setup_resp(adapter, skb);
+          if (adapter->twt_ps_disable == 1) {
+            rsi_dbg(INFO_ZONE, "%s: Sending Enable PS after TWT Setup\n", __func__);
+            rsi_enable_ps(adapter);
+            adapter->twt_ps_disable = 0;
+          }
         } else if ((adapter->ap_support_twt)
                    && (twt_setup_frame->twt_element.req_type_twt_setup_command == TWT_SETUP_CMD_ACCEPT)) {
           if ((adapter->twt_session_active == 0)) { //unsolicited TWT response processing
@@ -1888,7 +1893,7 @@ int rsi_set_channel(struct rsi_common *common, struct ieee80211_channel *channel
     return 0;
   }
 
-  if ((common->driver_mode == E2E_MODE) && (common->acx_module == true)) {
+  if ((common->driver_mode == E2E_MODE) && (common->acx_module == true) && (vif->type == NL80211_IFTYPE_AP)) {
     if (channel->hw_value > 11) {
       rsi_dbg(ERR_ZONE, "%s : Channel = %d not Supported for ACx Modules\n ", __func__, channel->hw_value);
       return -EOPNOTSUPP;
@@ -2339,8 +2344,12 @@ int rsi_send_auto_rate_request(struct rsi_common *common,
     moderate_rate_inx = STD_RATE_36;
   } else if (b_mode) {
     /*BONLY MODE*/
-    rate_table_sz     = 4;
-    moderate_rate_inx = STD_RATE_5_5;
+    rate_table_sz = 4;
+    if (strstr(adapter->country, "JP") && common->mac80211_cur_channel == 14) {
+      moderate_rate_inx = STD_RATE_01;
+      rate_bitmap &= ~(RSI_RATE_5_5_INX | RSI_RATE_11_INX);
+    } else
+      moderate_rate_inx = STD_RATE_5_5;
   } else if (is_ht) {
     /*NONLY MODE*/
     rate_table_sz     = 9;
@@ -2520,12 +2529,6 @@ void rsi_validate_bgscan_channels(struct rsi_hw *adapter, struct bgscan_config_p
   rsi_dbg(INFO_ZONE, "Final bgscan channels:\n");
   for (cnt = 0; cnt < params->num_user_channels; cnt++) {
     ch_num = params->user_channels[cnt];
-    if (common->acx_module == true) {
-      if (ch_num > 11) {
-        rsi_dbg(ERR_ZONE, "Don't include channel = %d for ACx module ", ch_num);
-        continue;
-      }
-    }
 
     if ((ch_num < 1) || ((ch_num > 14) && (ch_num < 36)) || ((ch_num > 64) && (ch_num < 100))
         || ((ch_num > 140) && (ch_num < 149)) || (ch_num > 165))
@@ -3790,6 +3793,11 @@ int rsi_send_bt_reg_params(struct rsi_common *common)
   memset(skb->data, 0, sizeof(struct bt_register_param));
   bt_reg_param = (struct bt_register_param *)skb->data;
 
+  if (common->is_915 && (common->ble_tx_pwr_inx <= 63)) {
+    rsi_dbg(ERR_ZONE, "%s : Unsupported ble_tx_pwr_inx : %d for Si915 module \n", __func__, common->ble_tx_pwr_inx);
+    return -EINVAL;
+  }
+
   bt_reg_param->desc_word[7] = cpu_to_le16(BT_PKT_TYPE);
   bt_reg_param->desc_word[0] = (RSI_BT_MGMT_Q << 12);
   if (COMMON_DEV_MODEL_9116) {
@@ -4210,6 +4218,12 @@ int rsi_handle_card_ready(struct rsi_common *common, u8 *msg)
           return -EINVAL;
         }
       }
+
+      if (msg[15] & BIT(2)) {
+        rsi_dbg(ERR_ZONE, "%s : Si915 Module Detected \n", __func__);
+        common->is_915 = true;
+      }
+
       rsi_dbg(INIT_ZONE, "Card ready indication from Common HAL\n");
       common->common_hal_tx_access = true;
       rsi_set_default_parameters(common);
@@ -5257,6 +5271,11 @@ static void twt_setup_timer_callback(struct timer_list *t)
     adapter->twt_session_in_progress = 0;
     adapter->twt_current_status      = TWT_SETUP_FAIL_MAX_RETRIES_REACHED;
     del_timer(&adapter->twt_setup_timer);
+    if (adapter->twt_ps_disable == 1) {
+      rsi_dbg(INFO_ZONE, "%s: Sending Enable PS after TWT Setup\n", __func__);
+      rsi_enable_ps(adapter);
+      adapter->twt_ps_disable = 0;
+    }
   }
 }
 void init_twt_setup_timer(struct rsi_hw *adapter, unsigned long timeout)
@@ -5328,6 +5347,12 @@ int send_twt_setup_frame(struct rsi_hw *adapter, u8 twt_setup_update, twt_setup_
     rsi_dbg(ERR_ZONE, "Failed to alloc twt_setup_req\n");
     return -ENOMEM;
   }
+  if (adapter->ps_state == PS_ENABLED) {
+    rsi_dbg(INFO_ZONE, "%s: Sending disable PS for TWT Setup\n", __func__);
+    rsi_disable_ps(adapter);
+    adapter->twt_ps_disable = 1;
+  }
+
   skb_put(skb, len);
   memset(skb->data, 0, skb->len);
   skb_reserve(skb, DWORD_ALIGNMENT);

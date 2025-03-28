@@ -556,10 +556,12 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
         adapter->bt_nl_pid = pid;
         payload_len        = nl_desc->desc_word[1];
         rsi_hex_dump(INFO_ZONE, "BT PER pkt", skb->data, skb->len);
+
         status = rsi_bt_transmit_cmd(adapter, nlh, payload_len, cmd);
-        if (status < 0)
+        if (status < 0) {
           rsi_dbg(ERR_ZONE, " Failed in BT PER STATS\n");
-        return;
+        }
+        rsi_response(adapter, nlh, status);
         break;
 
       case BT_E2E_STAT:
@@ -594,6 +596,15 @@ static void rsi_nl_recv_msg(struct sk_buff *skb)
           rsi_process_rx_bt_ble_gain_table_update(common, status);
           rsi_dbg(ERR_ZONE, " Failed in BT/BLE GAIN TABLE UPDATE\n");
         }
+        break;
+      case BLE_COUNTRY_REGION_UPDATE:
+        rsi_dbg(INFO_ZONE, "BLE COUNTRY REGION UPDATE from App\n");
+        adapter->bt_nl_pid = pid;
+        payload_len        = nl_desc->desc_word[1];
+        rsi_hex_dump(DATA_TX_ZONE, "TX BT pkt", skb->data, skb->len);
+        status = rsi_ble_country_region_update(adapter, nlh, payload_len, cmd);
+        if (status < 0)
+          rsi_dbg(ERR_ZONE, " Failed in BT/BLE GAIN TABLE UPDATE\n");
         break;
 #endif
       default:

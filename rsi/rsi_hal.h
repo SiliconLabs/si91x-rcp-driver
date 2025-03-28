@@ -7,20 +7,22 @@
 #define __RSI_HAL_H__
 
 /* Device Operating modes */
-#define DEV_OPMODE_WIFI_ALONE     1
-#define DEV_OPMODE_BT_ALONE       4
-#define DEV_OPMODE_BT_LE_ALONE    8
-#define DEV_OPMODE_BT_DUAL        12
-#define DEV_OPMODE_STA_BT         5
-#define DEV_OPMODE_STA_BT_LE      9
-#define DEV_OPMODE_STA_BT_DUAL    13
-#define DEV_OPMODE_AP_BT          6
-#define DEV_OPMODE_AP_BT_LE       10
-#define DEV_OPMODE_AP_BT_DUAL     14
-#define DEV_OPMODE_ZB_ALONE       16
-#define DEV_OPMODE_STA_ZB         17
-#define DEV_OPMODE_ZB_COORDINATOR 32
-#define DEV_OPMODE_ZB_ROUTER      48
+#define DEV_OPMODE_WIFI_ALONE      1
+#define DEV_OPMODE_AP_ALONE        2
+#define DEV_OPMODE_CONCURRENT_MODE 3
+#define DEV_OPMODE_BT_ALONE        4
+#define DEV_OPMODE_BT_LE_ALONE     8
+#define DEV_OPMODE_BT_DUAL         12
+#define DEV_OPMODE_STA_BT          5
+#define DEV_OPMODE_STA_BT_LE       9
+#define DEV_OPMODE_STA_BT_DUAL     13
+#define DEV_OPMODE_AP_BT           6
+#define DEV_OPMODE_AP_BT_LE        10
+#define DEV_OPMODE_AP_BT_DUAL      14
+#define DEV_OPMODE_ZB_ALONE        16
+#define DEV_OPMODE_STA_ZB          17
+#define DEV_OPMODE_ZB_COORDINATOR  32
+#define DEV_OPMODE_ZB_ROUTER       48
 
 /* ZigBee Operating Modes */
 #define ZIGBEE_END_DEVICE  1

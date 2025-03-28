@@ -375,6 +375,11 @@ typedef struct bt_stats_s {
   unsigned short id_pkts_rcvd;
 } bt_stats_t;
 
+struct ble_country_region_update_t {
+  unsigned char value;
+  unsigned char ble_country_region;
+};
+
 #define ONEBOX_PRINT(fmt, args...) fprintf(stdout, fmt, ##args)
 #define ONEBOX_PRINT_INFO(a, fmt) \
   if (a)                          \
@@ -458,10 +463,14 @@ int bt_stats(unsigned char *, int sfd, int no_of_packets);
 #define RSI_GET_BT_E2E_STATS        0x0B
 #define RSI_GET_BT_E2E_PERIOD_STATS 0x0C
 
+#define RSI_BLE_COUNTRY_REGION_UPDATE 0x27
+#define BLE_GET_COUNTRY_REGION        0x28
+
 /* Common Frame nos for matlab_utils.c and bt_util.c */
 #define BT_PACKET  2
 #define BLE_PACKET 3
 
 int_32 bt_e2e_stats(uint_8 *file_name, int sfd);
 int_32 bt_e2e_period_stats(uint_8 *file_name, int period, int sfd);
+int send_ble_country_region_update_frame_to_drv(struct ble_country_region_update_t ble_country_region_update, int sfd);
 #endif

@@ -62,6 +62,7 @@ int main(int argc, char *argv[])
   int first_time = 1;
   FILE *pFile;
   unsigned char macaddr[4];
+  int status = 0;
   struct bb_rf_param_bt_t bb_rf_params;
   ble_per_recv_params_t ble_per_recv_params;
   struct nlmsghdr *nlh;
@@ -185,8 +186,15 @@ int main(int argc, char *argv[])
     if (ble_per_transmit_wrapper(bb_rf_params, BT_PER, sfd) < 0) {
       printf("Unable to perform bt_receive\n");
       return ONEBOX_STATUS_FAILURE;
+    } else {
+      nlh = common_recv_mesg_wrapper(sfd, sizeof(status));
+      memcpy(&status, NLMSG_DATA(nlh), sizeof(status));
+      if (status == 0) {
+        printf("======== SUCCESS ============\n");
+      } else {
+        printf("======== FAILED ============\n");
+      }
     }
-    printf("======== SUCCESS ============\n");
   } else if (argc == STOP_OF_ARGS) {
     ble_per_recv_params.enable = 0;
     bb_rf_params.value         = PER_BLE_RECEIVE;

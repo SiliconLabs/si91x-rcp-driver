@@ -733,6 +733,12 @@ int rsi_send_bt_pkt(struct rsi_common *common, struct sk_buff *skb)
 
   frame_desc[7] = cpu_to_le16(bt_cb(skb)->pkt_type);
 
+#if defined(CONFIG_RSI_COEX_MODE) || defined(CONFIG_RSI_BT_ALONE)
+  if (frame_desc[7] == BLE_COUNTRY_REGION_UPDATE) {
+
+    frame_desc[7] = ((BLE_COUNTRY_REGION_UPDATE << 8) | BLE_VENDOR_PKT);
+  }
+#endif
   rsi_hex_dump(DATA_TX_ZONE, "TX BT pkt", skb->data, skb->len);
   status = rsi_send_pkt(common, skb);
   if (status)
@@ -1820,7 +1826,9 @@ int rsi_validate_oper_mode(u16 oper_mode)
   }
 #endif
   switch (oper_mode) {
-    case 1:
+    case DEV_OPMODE_WIFI_ALONE:
+    case DEV_OPMODE_AP_ALONE:
+    case DEV_OPMODE_CONCURRENT_MODE:
 #if defined(CONFIG_RSI_BT_ALONE)
       rsi_dbg(ERR_ZONE,
               "Operating mode %d not supported with"
@@ -1830,9 +1838,9 @@ int rsi_validate_oper_mode(u16 oper_mode)
 #else
       return 0;
 #endif
-    case 4:
-    case 8:
-    case 12:
+    case DEV_OPMODE_BT_ALONE:
+    case DEV_OPMODE_BT_LE_ALONE:
+    case DEV_OPMODE_BT_DUAL:
 #ifndef CONFIG_RSI_BT_ALONE
       rsi_dbg(ERR_ZONE,
               "Operating mode %d not supported without"
@@ -1842,12 +1850,12 @@ int rsi_validate_oper_mode(u16 oper_mode)
 #else
       return 0;
 #endif
-    case 5:
-    case 6:
-    case 9:
-    case 10:
-    case 13:
-    case 14:
+    case DEV_OPMODE_STA_BT:
+    case DEV_OPMODE_AP_BT:
+    case DEV_OPMODE_STA_BT_LE:
+    case DEV_OPMODE_AP_BT_LE:
+    case DEV_OPMODE_STA_BT_DUAL:
+    case DEV_OPMODE_AP_BT_DUAL:
 #ifndef CONFIG_RSI_COEX_MODE
       rsi_dbg(ERR_ZONE,
               "Operating mode %d not supported without"
@@ -1857,10 +1865,10 @@ int rsi_validate_oper_mode(u16 oper_mode)
 #else
       return 0;
 #endif
-    case 16:
-    case 17:
-    case 32:
-    case 48:
+    case DEV_OPMODE_ZB_ALONE:
+    case DEV_OPMODE_STA_ZB:
+    case DEV_OPMODE_ZB_COORDINATOR:
+    case DEV_OPMODE_ZB_ROUTER:
 #if !defined(CONFIG_RSI_COEX_MODE) || !defined(CONFIG_RSI_ZIGB)
       rsi_dbg(ERR_ZONE,
               "Operating mode %d not supported without"
@@ -1977,7 +1985,6 @@ int rsi_hal_device_init(struct rsi_hw *adapter)
 #endif
   }
 #else
-  common->oper_mode = 1;
   common->coex_mode = 1;
 #endif
 

@@ -78,6 +78,7 @@ static bool rsi_recalculate_weights(struct rsi_common *common)
  *
  * Return: pkt_num: Number of pkts to be dequeued.
  */
+#if 0
 static u32 rsi_get_num_pkts_dequeue(struct rsi_common *common, u8 q_num)
 {
   struct rsi_hw *adapter = common->priv;
@@ -118,7 +119,7 @@ static u32 rsi_get_num_pkts_dequeue(struct rsi_common *common, u8 q_num)
 
   return pkt_cnt;
 }
-
+#endif
 /**
  * rsi_core_determine_hal_queue() - This function determines the queue from
  *				    which packet has to be dequeued.
@@ -197,8 +198,26 @@ get_queue_num:
 #ifdef CONFIG_STA_PLUS_AP
     /* This executes only for STA queues */
 #endif
-    common->pkt_cnt = rsi_get_num_pkts_dequeue(common, q_num);
-    common->pkt_cnt -= 1;
+    if (common->selected_qnum == VO_Q) {
+      if (common->edca_params[q_num].acm)
+        common->pkt_cnt = 1;
+      else
+        common->pkt_cnt = 6;
+    } else {
+      if (common->edca_params[q_num].acm)
+        common->pkt_cnt = 1;
+      else {
+        common->pkt_cnt = ((common->edca_params[q_num].txop << 5) / 800);
+        if (common->edca_params[VI_Q].aifs > common->edca_params[BE_Q].aifs)
+          common->pkt_cnt = 2;
+      }
+    }
+    if (skb_queue_len(&common->tx_queue[q_num]) <= common->pkt_cnt)
+      common->pkt_cnt = skb_queue_len(&common->tx_queue[q_num]);
+    if (common->pkt_cnt != 0)
+      common->pkt_cnt -= 1;
+    else
+      common->pkt_cnt = 0;
   }
 
   return q_num;
@@ -288,20 +307,33 @@ void rsi_core_qos_processor(struct rsi_common *common)
       }
     }
 
-    if ((q_num < MGMT_SOFT_Q) && ((skb_queue_len(&common->tx_queue[q_num])) <= MIN_DATA_QUEUE_WATER_MARK)) {
-      if (!adapter->hw) {
-        mutex_unlock(&common->tx_lock);
-        break;
-      }
-      if (ieee80211_queue_stopped(adapter->hw, WME_AC(q_num)))
-        ieee80211_wake_queue(adapter->hw, WME_AC(q_num));
-    }
-
     skb = rsi_core_dequeue_pkt(common, q_num);
     if (!skb) {
       rsi_dbg(ERR_ZONE, "skb null\n");
       mutex_unlock(&common->tx_lock);
       break;
+    }
+    if (q_num < MGMT_SOFT_Q) {
+      if (!adapter->hw) {
+        mutex_unlock(&common->tx_lock);
+        break;
+      }
+      if (ieee80211_queue_stopped(adapter->hw, WME_AC(VO_Q)) && (skb_queue_len(&common->tx_queue[VO_Q]) < 100))
+        ieee80211_wake_queue(adapter->hw, WME_AC(VO_Q));
+      if (skb_queue_len(&common->tx_queue[VO_Q]) == 0) {
+        if (ieee80211_queue_stopped(adapter->hw, WME_AC(VI_Q))
+            && ((!common->edca_params[VI_Q].acm && (skb_queue_len(&common->tx_queue[VI_Q]) < 150))
+                || (&common->edca_params[VI_Q].acm && (skb_queue_len(&common->tx_queue[BE_Q]) < 25))))
+          ieee80211_wake_queue(adapter->hw, WME_AC(VI_Q));
+        if (skb_queue_len(&common->tx_queue[VI_Q]) < 5) {
+          if (ieee80211_queue_stopped(adapter->hw, WME_AC(BE_Q)) && (skb_queue_len(&common->tx_queue[BE_Q]) < 25))
+            ieee80211_wake_queue(adapter->hw, WME_AC(BE_Q));
+          if (skb_queue_len(&common->tx_queue[BE_Q]) < 15) {
+            if (ieee80211_queue_stopped(adapter->hw, WME_AC(BK_Q)) && (skb_queue_len(&common->tx_queue[BK_Q]) < 10))
+              ieee80211_wake_queue(adapter->hw, WME_AC(BK_Q));
+          }
+        }
+      }
     }
     if ((adapter->peer_notify) && (skb->data[2] == PEER_NOTIFY)) {
       adapter->peer_notify = false;
@@ -543,6 +575,13 @@ void rsi_core_xmit(struct rsi_common *common, struct sk_buff *skb)
       skb->priority += 4;
     }
 #endif
+    if ((vif->type == NL80211_IFTYPE_AP) && (is_broadcast_ether_addr(wlh->addr1))) {
+#ifndef CONFIG_STA_PLUS_AP
+      skb->priority = VO_Q;
+#else
+      skb->priority = VO_Q_AP;
+#endif
+    }
 
     if (!(tx_params->flags & ENCAP_OFFLOAD_EN)) {
       if ((!is_broadcast_ether_addr(wlh->addr1)) && (!is_multicast_ether_addr(wlh->addr1))) {
@@ -678,24 +717,41 @@ void rsi_core_xmit(struct rsi_common *common, struct sk_buff *skb)
         water_mark = VO_DATA_QUEUE_WATER_MARK;
         break;
     }
-    if ((skb_queue_len(&common->tx_queue[q_num]) + 1) >= water_mark) {
-      rsi_dbg(ERR_ZONE, "%s: queue %d is full\n", __func__, q_num);
-#ifndef CONFIG_STA_PLUS_AP
+    rsi_core_queue_pkt(common, skb);
+    rsi_dbg(DATA_TX_ZONE, "%s: ===> Scheduling TX thread <===\n", __func__);
+    rsi_set_event(&common->tx_thread.event);
+    if (skb_queue_len(&common->tx_queue[q_num]) > (common->host_txq_maxlen[q_num] - NW_QUEUE_STOP_OFFSET)) {
       if (!ieee80211_queue_stopped(adapter->hw, WME_AC(q_num)))
         ieee80211_stop_queue(adapter->hw, WME_AC(q_num));
-#else
-      if (!ieee80211_queue_stopped(adapter->hw, WME_AC(q_num % 4)))
-        ieee80211_stop_queue(adapter->hw, WME_AC(q_num % 4));
-#endif
-      rsi_set_event(&common->tx_thread.event);
-      goto xmit_fail;
+      if (common->edca_params[VI_Q].acm)
+        ieee80211_stop_queue(adapter->hw, WME_AC(VI_Q));
     }
+    if (common->edca_params[VI_Q].aifs > common->edca_params[BE_Q].aifs) {
+      if (skb_queue_len(&common->tx_queue[BE_Q]) > 5) {
+        ieee80211_stop_queue(adapter->hw, WME_AC(VI_Q));
+        ieee80211_stop_queue(adapter->hw, WME_AC(VO_Q));
+        ieee80211_stop_queue(adapter->hw, WME_AC(BK_Q));
+      } else if (skb_queue_len(&common->tx_queue[BK_Q]) > 10) {
+        ieee80211_stop_queue(adapter->hw, WME_AC(VO_Q));
+        ieee80211_stop_queue(adapter->hw, WME_AC(VI_Q));
+      } else if (skb_queue_len(&common->tx_queue[VO_Q]) > 10)
+        ieee80211_stop_queue(adapter->hw, WME_AC(VI_Q));
+    } else {
+      if (skb_queue_len(&common->tx_queue[VO_Q]) > 15) {
+        ieee80211_stop_queue(adapter->hw, WME_AC(VI_Q));
+        ieee80211_stop_queue(adapter->hw, WME_AC(BE_Q));
+        ieee80211_stop_queue(adapter->hw, WME_AC(BK_Q));
+      } else if (skb_queue_len(&common->tx_queue[VI_Q]) > 30) {
+        ieee80211_stop_queue(adapter->hw, WME_AC(BE_Q));
+        ieee80211_stop_queue(adapter->hw, WME_AC(BK_Q));
+      } else if (skb_queue_len(&common->tx_queue[BE_Q]) > 60)
+        ieee80211_stop_queue(adapter->hw, WME_AC(BK_Q));
+    }
+  } else {
+    rsi_core_queue_pkt(common, skb);
+    rsi_dbg(DATA_TX_ZONE, "%s: ===> Scheduling TX thread <===\n", __func__);
+    rsi_set_event(&common->tx_thread.event);
   }
-
-  rsi_core_queue_pkt(common, skb);
-  rsi_dbg(DATA_TX_ZONE, "%s: ===> Scheduling TX thead <===\n", __func__);
-  rsi_set_event(&common->tx_thread.event);
-
   return;
 
 xmit_fail:

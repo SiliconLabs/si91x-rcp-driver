@@ -30,6 +30,7 @@
 #define KEY_TYPE_CLEAR   0
 #define RSI_PAIRWISE_KEY 1
 #define RSI_GROUP_KEY    2
+#define RSI_AES_CMAC     4
 
 #define RSI_MAC_SUB_LEN 3
 

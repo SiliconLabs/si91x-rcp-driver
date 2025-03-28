@@ -27,8 +27,9 @@ int main(int argc, char *argv[])
   int ret   = 0;
   int cmdNo = -1;
   struct bb_rf_param_bt_t bb_rf_params;
+  struct ble_country_region_update_t ble_country_region_update;
   int no_of_packets;
-  unsigned int bb_addr = 0, bb_val = 0, len = 0;
+  unsigned int bb_addr = 0, bb_val = 0, len = 0, status;
   unsigned char ii = 0;
   struct nlmsghdr *nlh;
 
@@ -126,6 +127,36 @@ int main(int argc, char *argv[])
       }
       free(nlh);
       break;
+    case RSI_BLE_COUNTRY_REGION_UPDATE:
+      if (argc == 3) {
+        ble_country_region_update.value = RSI_BLE_COUNTRY_REGION_UPDATE;
+
+        if (!strcmp((char *)argv[2], "get_ble_country")) {
+          printf("Read country region \n");
+          ble_country_region_update.ble_country_region = BLE_GET_COUNTRY_REGION;
+        } else {
+          ble_country_region_update.ble_country_region = atoi(argv[2]);
+
+          if (ble_country_region_update.ble_country_region < 6) {
+
+            printf("Set country region \n");
+          } else {
+            printf("Unsupported country region \n");
+            break;
+          }
+        }
+        if (send_ble_country_region_update_frame_to_drv(ble_country_region_update, sfd) < 0) {
+          return ONEBOX_STATUS_FAILURE;
+        } else {
+          nlh = common_recv_mesg_wrapper(sfd, 2);
+          memcpy(&status, (short int *)NLMSG_DATA(nlh), 2);
+          printf(" ***** Received Country region From LMAC is = %d *****\n ", status);
+        }
+        break;
+      } else {
+        usage();
+      }
+      break;
     default:
       break;
   }
@@ -177,6 +208,33 @@ int send_bt_e2e_stat_frame_to_drv(struct bb_rf_param_bt_t bb_rf_params, int sfd)
   nlh->nlmsg_pid        = getpid();
   nlh->nlmsg_flags      = 0;
   memcpy(NLMSG_DATA(nlh) + NL_DATA_DESC_SZ, &bb_rf_params, sizeof(struct bb_rf_param_bt_t));
+  ret = common_send_mesg_wrapper(sfd, dest_addr, nlh);
+  if (ret < 0)
+    close(sfd);
+  free(nlh);
+  return ret;
+}
+
+int send_ble_country_region_update_frame_to_drv(struct ble_country_region_update_t ble_country_region_update, int sfd)
+{
+  struct sockaddr_nl dest_addr;
+  struct nlmsghdr *nlh        = NULL;
+  struct rsi_nl_desc *nl_desc = NULL;
+  int ret;
+  memset(&dest_addr, 0, sizeof(dest_addr));
+  dest_addr.nl_family = AF_NETLINK;
+  dest_addr.nl_pid    = 0; /* For Linux Kernel */
+  dest_addr.nl_groups = 0; /* unicast */
+  nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(sizeof(struct ble_country_region_update_t) + NL_DATA_DESC_SZ));
+  memset(nlh, 0, NLMSG_SPACE(sizeof(struct ble_country_region_update_t) + NL_DATA_DESC_SZ));
+  nlh->nlmsg_len        = NLMSG_SPACE(sizeof(struct ble_country_region_update_t) + NL_DATA_DESC_SZ);
+  nl_desc               = (struct rsi_nl_desc *)NLMSG_DATA(nlh);
+  nl_desc->desc_word[0] = RSI_BLE_COUNTRY_REGION_UPDATE;
+  nl_desc->desc_word[1] = sizeof(struct ble_country_region_update_t);
+  nlh->nlmsg_type       = (unsigned short)BLE_PACKET;
+  nlh->nlmsg_pid        = getpid();
+  nlh->nlmsg_flags      = 0;
+  memcpy(NLMSG_DATA(nlh) + NL_DATA_DESC_SZ, &ble_country_region_update, sizeof(struct ble_country_region_update_t));
   ret = common_send_mesg_wrapper(sfd, dest_addr, nlh);
   if (ret < 0)
     close(sfd);
@@ -619,6 +677,8 @@ int get_bt_cmdnumber(char *command)
     return RSI_SET_BB_WRITE;
   else if (!strcmp(command, "bb_read"))
     return RSI_SET_BB_READ;
+  else if (!strcmp(command, "ble_country_region"))
+    return RSI_BLE_COUNTRY_REGION_UPDATE;
   else
     usage();
   return ONEBOX_STATUS_SUCCESS;
